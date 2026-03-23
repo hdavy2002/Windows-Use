@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Humphi AI — Action Monitor</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Courier New', monospace;
+    background: #0d0d0d;
+    color: #e0e0e0;
+    min-height: 100vh;
+  }
+
+  header {
+    background: #111;
+    border-bottom: 1px solid #1e1e1e;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  header h1 {
+    font-size: 14px;
+    font-weight: bold;
+    color: #4a9eff;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  header .status {
+    font-size: 11px;
+    color: #555;
+  }
+
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1px;
+    background: #1a1a1a;
+    border-bottom: 1px solid #1e1e1e;
+  }
+
+  .stat {
+    background: #111;
+    padding: 12px 16px;
+    text-align: center;
+  }
+
+  .stat .val {
+    font-size: 20px;
+    font-weight: bold;
+    color: #4a9eff;
+  }
+
+  .stat .lbl {
+    font-size: 10px;
+    color: #555;
+    margin-top: 2px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .stat.green .val { color: #3ecf8e; }
+  .stat.red .val { color: #f66; }
+  .stat.amber .val { color: #f0a500; }
+
+  .controls {
+    padding: 12px 24px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    border-bottom: 1px solid #1a1a1a;
+  }
+
+  .controls input {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    color: #e0e0e0;
+    padding: 6px 12px;
+    font-family: inherit;
+    font-size: 12px;
+    border-radius: 4px;
+    width: 260px;
+  }
+
+  .controls button {
+    background: #1e3a5f;
+    border: 1px solid #2a5a8f;
+    color: #4a9eff;
+    padding: 6px 14px;
+    font-family: inherit;
+    font-size: 12px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .controls button:hover { background: #254870; }
+
+  .filter-btn {
+    font-size: 11px;
+    padding: 4px 10px;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    color: #888;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .filter-btn.active {
+    background: #1e3a5f;
+    border-color: #2a5a8f;
+    color: #4a9eff;
+  }
+
+  #log-container {
+    padding: 16px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .action-card {
+    background: #111;
+    border: 1px solid #1e1e1e;
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+
+  .action-card:hover { border-color: #2a2a2a; }
+  .action-card.success { border-left: 3px solid #3ecf8e; }
+  .action-card.failed { border-left: 3px solid #f66; }
+
+  .card-header {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto auto auto;
+    gap: 16px;
+    align-items: center;
+    padding: 10px 14px;
+  }
+
+  .task-text {
+    font-size: 13px;
+    color: #ccc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .metric {
+    font-size: 11px;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .metric .m-val { color: #4a9eff; font-weight: bold; }
+  .metric .m-lbl { color: #444; font-size: 10px; }
+
+  .badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .badge.ok { background: #0d2a1a; color: #3ecf8e; }
+  .badge.fail { background: #2a0d0d; color: #f66; }
+
+  .card-detail {
+    display: none;
+    border-top: 1px solid #1a1a1a;
+    padding: 12px 14px;
+  }
+
+  .card-detail.open { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+  .detail-section h4 {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #444;
+    margin-bottom: 8px;
+  }
+
+  .detail-section pre {
+    background: #0d0d0d;
+    border: 1px solid #1a1a1a;
+    border-radius: 4px;
+    padding: 10px;
+    font-size: 11px;
+    color: #aaa;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+
+  .timing-bar {
+    display: flex;
+    gap: 4px;
+    margin-top: 8px;
+    align-items: center;
+  }
+
+  .timing-seg {
+    height: 6px;
+    border-radius: 2px;
+    min-width: 2px;
+  }
+
+  .timing-seg.filter { background: #4a9eff; }
+  .timing-seg.compress { background: #3ecf8e; }
+  .timing-seg.groq { background: #f0a500; }
+  .timing-seg.exec { background: #9b59b6; }
+
+  .timing-legend {
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+    font-size: 10px;
+    color: #555;
+  }
+
+  .timing-legend span::before {
+    content: "■ ";
+  }
+
+  .timing-legend .f::before { color: #4a9eff; }
+  .timing-legend .c::before { color: #3ecf8e; }
+  .timing-legend .g::before { color: #f0a500; }
+  .timing-legend .e::before { color: #9b59b6; }
+
+  .reduction-bar {
+    height: 4px;
+    background: #1a1a1a;
+    border-radius: 2px;
+    margin-top: 4px;
+    overflow: hidden;
+  }
+
+  .reduction-bar .fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4a9eff, #3ecf8e);
+    border-radius: 2px;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 60px;
+    color: #333;
+    font-size: 13px;
+  }
+
+  .empty-state .big {
+    font-size: 36px;
+    margin-bottom: 12px;
+  }
+
+  .upload-zone {
+    border: 2px dashed #2a2a2a;
+    border-radius: 8px;
+    padding: 24px;
+    text-align: center;
+    color: #444;
+    font-size: 12px;
+    margin: 24px;
+    cursor: pointer;
+  }
+
+  .upload-zone:hover { border-color: #3a3a3a; color: #666; }
+
+  .timestamp {
+    font-size: 10px;
+    color: #333;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚡ Humphi AI — Action Monitor</h1>
+  <div class="status" id="status-text">Load a log file to begin</div>
+</header>
+
+<div class="stats-bar">
+  <div class="stat">
+    <div class="val" id="s-total">—</div>
+    <div class="lbl">Total Actions</div>
+  </div>
+  <div class="stat green">
+    <div class="val" id="s-success">—</div>
+    <div class="lbl">Succeeded</div>
+  </div>
+  <div class="stat red">
+    <div class="val" id="s-failed">—</div>
+    <div class="lbl">Failed</div>
+  </div>
+  <div class="stat amber">
+    <div class="val" id="s-reduction">—</div>
+    <div class="lbl">Avg Token Reduction</div>
+  </div>
+  <div class="stat">
+    <div class="val" id="s-groq">—</div>
+    <div class="lbl">Avg Groq Latency</div>
+  </div>
+</div>
+
+<div class="controls">
+  <input type="file" id="log-file" accept=".jsonl,.json" style="display:none">
+  <button onclick="document.getElementById('log-file').click()">📂 Load Log File</button>
+  <input type="text" id="search" placeholder="Search tasks..." oninput="renderLogs()">
+  <button class="filter-btn active" id="f-all" onclick="setFilter('all')">All</button>
+  <button class="filter-btn" id="f-ok" onclick="setFilter('ok')">Success</button>
+  <button class="filter-btn" id="f-fail" onclick="setFilter('fail')">Failed</button>
+  <button onclick="clearLogs()" style="margin-left:auto; color:#f66; border-color:#3a1a1a; background:#1a0d0d;">🗑 Clear</button>
+</div>
+
+<div id="log-container">
+  <div class="upload-zone" onclick="document.getElementById('log-file').click()">
+    <div style="font-size:28px; margin-bottom:8px;">📋</div>
+    Click to load a Humphi log file (.jsonl)<br>
+    <span style="font-size:10px; color:#333;">Located at ~/.humphi/logs/humphi_YYYY-MM-DD.jsonl</span>
+  </div>
+</div>
+
+<script>
+let allLogs = [];
+let activeFilter = 'all';
+
+document.getElementById('log-file').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const lines = ev.target.result.trim().split('\n');
+    allLogs = lines
+      .map(l => { try { return JSON.parse(l); } catch { return null; } })
+      .filter(l => l && l.type === 'action');
+    updateStats();
+    renderLogs();
+    document.getElementById('status-text').textContent =
+      `${file.name} — ${allLogs.length} actions loaded`;
+  };
+  reader.readAsText(file);
+});
+
+function setFilter(f) {
+  activeFilter = f;
+  ['all','ok','fail'].forEach(k => {
+    document.getElementById('f-' + k).classList.toggle('active', k === f);
+  });
+  renderLogs();
+}
+
+function clearLogs() {
+  allLogs = [];
+  activeFilter = 'all';
+  updateStats();
+  renderLogs();
+  document.getElementById('status-text').textContent = 'Cleared';
+}
+
+function updateStats() {
+  const total = allLogs.length;
+  const ok = allLogs.filter(l => l.success).length;
+  const fail = total - ok;
+  const avgReduction = total
+    ? Math.round(allLogs.reduce((a, l) => a + (l.reduction_percent || 0), 0) / total)
+    : 0;
+  const avgGroq = total
+    ? Math.round(allLogs.reduce((a, l) => a + (l.groq_latency_ms || 0), 0) / total)
+    : 0;
+
+  document.getElementById('s-total').textContent = total || '—';
+  document.getElementById('s-success').textContent = ok || '—';
+  document.getElementById('s-failed').textContent = fail || '—';
+  document.getElementById('s-reduction').textContent = total ? avgReduction + '%' : '—';
+  document.getElementById('s-groq').textContent = total ? avgGroq + 'ms' : '—';
+}
+
+function renderLogs() {
+  const search = document.getElementById('search').value.toLowerCase();
+  let logs = allLogs.filter(l => {
+    if (activeFilter === 'ok' && !l.success) return false;
+    if (activeFilter === 'fail' && l.success) return false;
+    if (search && !l.task?.toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  const container = document.getElementById('log-container');
+
+  if (logs.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="big">📭</div>
+        No actions match current filter
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = logs.reverse().map((log, i) => {
+    const total = log.total_time_ms || 1;
+    const fPct = Math.round((log.filter_time_ms / total) * 100);
+    const cPct = Math.round((log.compress_time_ms / total) * 100);
+    const gPct = Math.round((log.groq_latency_ms / total) * 100);
+    const ePct = Math.max(0, 100 - fPct - cPct - gPct);
+    const ts = log.timestamp ? log.timestamp.substring(11, 19) : '';
+
+    return `
+    <div class="action-card ${log.success ? 'success' : 'failed'}" onclick="toggleCard(${i})">
+      <div class="card-header">
+        <div class="task-text">${escHtml(log.task || '(no task)')}</div>
+
+        <div class="metric">
+          <div class="m-val">${log.raw_token_estimate || 0}</div>
+          <div class="m-lbl">raw tokens</div>
+        </div>
+
+        <div class="metric">
+          <div class="m-val">${log.dsl_token_count || 0}</div>
+          <div class="m-lbl">sent tokens</div>
+        </div>
+
+        <div class="metric">
+          <div class="m-val" style="color:#3ecf8e">${log.reduction_percent || 0}%</div>
+          <div class="m-lbl">reduction</div>
+        </div>
+
+        <div class="metric">
+          <div class="m-val" style="color:#f0a500">${log.groq_latency_ms || 0}ms</div>
+          <div class="m-lbl">groq</div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="timestamp">${ts}</span>
+          <span class="badge ${log.success ? 'ok' : 'fail'}">${log.success ? 'OK' : 'FAIL'}</span>
+        </div>
+      </div>
+
+      <div class="card-detail" id="detail-${i}">
+        <div class="detail-section">
+          <h4>DSL Payload sent to Groq</h4>
+          <pre>${escHtml(log.dsl_payload || '(empty)')}</pre>
+
+          <h4 style="margin-top:12px;">Groq Response</h4>
+          <pre>${escHtml(log.groq_response || '(none)')}</pre>
+
+          ${log.execution_errors?.length ? `
+          <h4 style="margin-top:12px; color:#f66;">Execution Errors</h4>
+          <pre style="color:#f66">${escHtml(JSON.stringify(log.execution_errors, null, 2))}</pre>
+          ` : ''}
+        </div>
+
+        <div class="detail-section">
+          <h4>Timing Breakdown (${log.total_time_ms}ms total)</h4>
+          <div class="timing-bar">
+            <div class="timing-seg filter" style="width:${fPct}%; min-width:${fPct > 0 ? 4 : 0}px" title="Filter: ${log.filter_time_ms}ms"></div>
+            <div class="timing-seg compress" style="width:${cPct}%; min-width:${cPct > 0 ? 4 : 0}px" title="Compress: ${log.compress_time_ms}ms"></div>
+            <div class="timing-seg groq" style="width:${gPct}%; min-width:${gPct > 0 ? 4 : 0}px" title="Groq: ${log.groq_latency_ms}ms"></div>
+            <div class="timing-seg exec" style="width:${ePct}%; min-width:${ePct > 0 ? 4 : 0}px" title="Execution"></div>
+          </div>
+          <div class="timing-legend">
+            <span class="f">Filter ${log.filter_time_ms}ms</span>
+            <span class="c">Compress ${log.compress_time_ms}ms</span>
+            <span class="g">Groq ${log.groq_latency_ms}ms</span>
+            <span class="e">Execute</span>
+          </div>
+
+          <h4 style="margin-top:16px;">Token Reduction</h4>
+          <div style="font-size:11px; color:#555; margin-bottom:4px;">
+            ${log.raw_token_estimate} raw → ${log.dsl_token_count} sent
+          </div>
+          <div class="reduction-bar">
+            <div class="fill" style="width:${log.reduction_percent || 0}%"></div>
+          </div>
+          <div style="font-size:11px; color:#3ecf8e; margin-top:4px;">
+            ${log.reduction_percent || 0}% reduction
+          </div>
+
+          <h4 style="margin-top:16px;">Steps</h4>
+          <div style="font-size:11px; color:#aaa;">
+            Planned: ${log.steps_planned?.length || 0} &nbsp;|&nbsp;
+            Executed: ${log.steps_executed || 0} &nbsp;|&nbsp;
+            <span style="color:#3ecf8e">✓ ${log.steps_succeeded || 0}</span> &nbsp;|&nbsp;
+            <span style="color:#f66">✗ ${log.steps_failed || 0}</span>
+          </div>
+
+          ${log.steps_planned?.length ? `
+          <h4 style="margin-top:12px;">Planned Steps</h4>
+          <pre>${escHtml(JSON.stringify(log.steps_planned, null, 2))}</pre>
+          ` : ''}
+
+          ${log.notes ? `
+          <h4 style="margin-top:12px;">Notes</h4>
+          <pre>${escHtml(log.notes)}</pre>
+          ` : ''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleCard(i) {
+  const detail = document.getElementById('detail-' + i);
+  detail.classList.toggle('open');
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+</script>
+</body>
+</html>
