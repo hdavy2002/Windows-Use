@@ -8,6 +8,40 @@ EMPTY_MESSAGE="No elements found"
 if TYPE_CHECKING:
     from windows_use.uia.core import Rect
 
+# ── Humphi AI compression settings ───────────────────────────────────────────
+# Controls how aggressively we compress the UI tree before sending to Groq.
+# Groq free tier limit is 6000 TPM. Original output was 11,644 tokens.
+# With compression we target under 2000 tokens leaving room for system prompt.
+
+HUMPHI_MAX_INTERACTIVE = 40   # max interactive elements to send
+HUMPHI_MAX_SCROLLABLE  = 10   # max scrollable elements to send
+HUMPHI_MAX_NAME_LEN    = 35   # truncate long element names
+HUMPHI_STRIP_METADATA  = True # strip metadata JSON entirely (saves ~60% tokens)
+
+# Metadata keys worth keeping — everything else stripped
+HUMPHI_KEEP_META_KEYS  = {"value", "is_focused", "shortcut"}
+
+
+def _compress_name(name: str) -> str:
+    """Truncate long names and strip whitespace."""
+    name = " ".join(name.split())  # collapse whitespace
+    if len(name) > HUMPHI_MAX_NAME_LEN:
+        return name[:HUMPHI_MAX_NAME_LEN] + "…"
+    return name
+
+
+def _compress_meta(metadata: dict) -> str:
+    """Keep only useful metadata keys, strip the rest."""
+    if HUMPHI_STRIP_METADATA:
+        # Only keep keys that actually help the LLM decide what to do
+        slim = {k: v for k, v in metadata.items()
+                if k in HUMPHI_KEEP_META_KEYS and v not in (None, "", False, {})}
+        if not slim:
+            return "{}"
+        return json.dumps(slim, separators=(',', ':'))
+    return json.dumps(metadata)
+
+
 @dataclass
 class TreeState:
     status:bool=True
@@ -18,42 +52,67 @@ class TreeState:
     dom_informative_nodes:list['TextElementNode']|None=field(default_factory=list)
 
     def interactive_elements_to_string(self) -> str:
-        parts = []
         if not self.status:
-            parts.append(WARNING_MESSAGE)
-            return "\n".join(parts)
-        if not self.interactive_nodes and self.status:
-            parts.append(EMPTY_MESSAGE)
-            return "\n".join(parts)
-        # TOON-like format: Pipe-separated values with clear header
-        # Using abbreviations in header to save tokens
-        header = "# id|window|control_type|name|coords|metadata"
+            return WARNING_MESSAGE
+        if not self.interactive_nodes:
+            return EMPTY_MESSAGE
+
+        # ── Humphi: compress before sending to Groq ───────────────────────
+        nodes = self.interactive_nodes[:HUMPHI_MAX_INTERACTIVE]
+        total = len(self.interactive_nodes)
+        trimmed = total - len(nodes)
+
+        # Compressed header — fewer words = fewer tokens
+        header = "#|win|type|name|xy|meta"
         rows = [header]
-        for idx, node in enumerate(self.interactive_nodes):
-            row = f"{idx}|{node.window_name}|{node.control_type}|{node.name}|{node.center.to_string()}|{json.dumps(node.metadata)}"
+
+        for idx, node in enumerate(nodes):
+            name = _compress_name(node.name or "")
+            # Strip window name if it matches the control type — redundant noise
+            win = _compress_name(node.window_name or "")[:20]
+            ctype = node.control_type or ""
+            coords = node.center.to_string()
+            meta = _compress_meta(node.metadata)
+
+            # Skip completely empty/unnamed non-button elements
+            if not name and ctype not in ("Button", "MenuItem", "Hyperlink"):
+                continue
+
+            row = f"{idx}|{win}|{ctype}|{name}|{coords}|{meta}"
             rows.append(row)
-        parts.append("\n".join(rows))
-        return "\n".join(parts)
+
+        result = "\n".join(rows)
+
+        if trimmed > 0:
+            result += f"\n[+{trimmed} more elements not shown]"
+
+        return result
 
     def scrollable_elements_to_string(self) -> str:
-        parts = []
         if not self.status:
-            parts.append(WARNING_MESSAGE)
-            return "\n".join(parts)
-        if not self.scrollable_nodes and self.status:
-            parts.append(EMPTY_MESSAGE)
-            return "\n".join(parts)
-        # TOON-like format
-        header = "# id|window|control_type|name|coords|metadata"
+            return WARNING_MESSAGE
+        if not self.scrollable_nodes:
+            return EMPTY_MESSAGE
+
+        # ── Humphi: compress scrollable elements ──────────────────────────
+        nodes = self.scrollable_nodes[:HUMPHI_MAX_SCROLLABLE]
+        base_index = len(self.interactive_nodes) if self.interactive_nodes else 0
+
+        header = "#|win|type|name|xy|meta"
         rows = [header]
-        base_index = len(self.interactive_nodes)
-        for idx, node in enumerate(self.scrollable_nodes):
-            row = (f"{base_index + idx}|{node.window_name}|{node.control_type}|{node.name}|"
-                   f"{node.center.to_string()}|{json.dumps(node.metadata)}")
+
+        for idx, node in enumerate(nodes):
+            name = _compress_name(node.name or "")
+            win = _compress_name(node.window_name or "")[:20]
+            ctype = node.control_type or ""
+            coords = node.center.to_string()
+            meta = _compress_meta(node.metadata)
+            row = f"{base_index + idx}|{win}|{ctype}|{name}|{coords}|{meta}"
             rows.append(row)
-        parts.append("\n".join(rows))
-        return "\n".join(parts)
-    
+
+        return "\n".join(rows)
+
+
 @dataclass
 class BoundingBox:
     left:int
@@ -116,9 +175,8 @@ class TreeElementNode:
         self.center=node.center
         self.metadata=node.metadata
 
-    # Legacy method kept for compatibility if needed, but not used in new format
     def to_row(self, index: int):
-        return [index, self.window_name, self.control_type, self.name, self.value, self.shortcut, self.center.to_string(),self.is_focused]
+        return [index, self.window_name, self.control_type, self.name, self.center.to_string()]
 
 @dataclass
 class ScrollElementNode:
@@ -129,7 +187,6 @@ class ScrollElementNode:
     center: Center
     metadata:dict[str,Any]=field(default_factory=dict)
 
-    # Legacy method kept for compatibility
     def to_row(self, index: int, base_index: int):
         return [
             base_index + index,

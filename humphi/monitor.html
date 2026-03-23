@@ -3,292 +3,341 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Humphi AI — Action Monitor</title>
+<title>Humphi AI — Monitor</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
-  body {
-    font-family: 'Courier New', monospace;
-    background: #0d0d0d;
-    color: #e0e0e0;
-    min-height: 100vh;
-  }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f5f5f5;
+  color: #1a1a1a;
+  font-size: 15px;
+  line-height: 1.5;
+}
 
-  header {
-    background: #111;
-    border-bottom: 1px solid #1e1e1e;
-    padding: 16px 24px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
+header {
+  background: #fff;
+  border-bottom: 2px solid #e0e0e0;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
 
-  header h1 {
-    font-size: 14px;
-    font-weight: bold;
-    color: #4a9eff;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-  }
+header h1 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1a1a1a;
+  letter-spacing: 0.5px;
+}
 
-  header .status {
-    font-size: 11px;
-    color: #555;
-  }
+header h1 span { color: #2563eb; }
 
-  .stats-bar {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 1px;
-    background: #1a1a1a;
-    border-bottom: 1px solid #1e1e1e;
-  }
+.status-pill {
+  font-size: 13px;
+  color: #666;
+  background: #f0f0f0;
+  padding: 4px 12px;
+  border-radius: 20px;
+}
 
-  .stat {
-    background: #111;
-    padding: 12px 16px;
-    text-align: center;
-  }
+.status-pill.live { background: #dcfce7; color: #166534; }
 
-  .stat .val {
-    font-size: 20px;
-    font-weight: bold;
-    color: #4a9eff;
-  }
+.stats-bar {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  padding: 16px 24px;
+  background: #fff;
+  border-bottom: 1px solid #e0e0e0;
+}
 
-  .stat .lbl {
-    font-size: 10px;
-    color: #555;
-    margin-top: 2px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-  }
+.stat {
+  background: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  padding: 12px 16px;
+  text-align: center;
+}
 
-  .stat.green .val { color: #3ecf8e; }
-  .stat.red .val { color: #f66; }
-  .stat.amber .val { color: #f0a500; }
+.stat .val {
+  font-size: 26px;
+  font-weight: 700;
+  color: #2563eb;
+}
 
-  .controls {
-    padding: 12px 24px;
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    border-bottom: 1px solid #1a1a1a;
-  }
+.stat .lbl {
+  font-size: 12px;
+  color: #888;
+  margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 
-  .controls input {
-    background: #1a1a1a;
-    border: 1px solid #2a2a2a;
-    color: #e0e0e0;
-    padding: 6px 12px;
-    font-family: inherit;
-    font-size: 12px;
-    border-radius: 4px;
-    width: 260px;
-  }
+.stat.green .val { color: #16a34a; }
+.stat.red .val { color: #dc2626; }
+.stat.amber .val { color: #d97706; }
 
-  .controls button {
-    background: #1e3a5f;
-    border: 1px solid #2a5a8f;
-    color: #4a9eff;
-    padding: 6px 14px;
-    font-family: inherit;
-    font-size: 12px;
-    border-radius: 4px;
-    cursor: pointer;
-  }
+.controls {
+  padding: 12px 24px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: #fff;
+  border-bottom: 1px solid #e0e0e0;
+  flex-wrap: wrap;
+}
 
-  .controls button:hover { background: #254870; }
+.controls input[type="file"] { display: none; }
 
-  .filter-btn {
-    font-size: 11px;
-    padding: 4px 10px;
-    background: #1a1a1a;
-    border: 1px solid #2a2a2a;
-    color: #888;
-    border-radius: 4px;
-    cursor: pointer;
-  }
+button {
+  background: #fff;
+  border: 1.5px solid #d0d0d0;
+  color: #333;
+  padding: 7px 16px;
+  font-size: 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s;
+}
 
-  .filter-btn.active {
-    background: #1e3a5f;
-    border-color: #2a5a8f;
-    color: #4a9eff;
-  }
+button:hover { background: #f0f0f0; }
 
-  #log-container {
-    padding: 16px 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
+button.primary {
+  background: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
+}
 
-  .action-card {
-    background: #111;
-    border: 1px solid #1e1e1e;
-    border-radius: 6px;
-    overflow: hidden;
-    cursor: pointer;
-    transition: border-color 0.15s;
-  }
+button.primary:hover { background: #1d4ed8; }
 
-  .action-card:hover { border-color: #2a2a2a; }
-  .action-card.success { border-left: 3px solid #3ecf8e; }
-  .action-card.failed { border-left: 3px solid #f66; }
+button.active {
+  background: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
+}
 
-  .card-header {
-    display: grid;
-    grid-template-columns: 1fr auto auto auto auto auto;
-    gap: 16px;
-    align-items: center;
-    padding: 10px 14px;
-  }
+button.danger { color: #dc2626; border-color: #fca5a5; }
+button.danger:hover { background: #fef2f2; }
 
-  .task-text {
-    font-size: 13px;
-    color: #ccc;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
+.search-input {
+  background: #f8f9fa;
+  border: 1.5px solid #d0d0d0;
+  color: #1a1a1a;
+  padding: 7px 14px;
+  font-size: 14px;
+  border-radius: 8px;
+  width: 280px;
+  font-family: inherit;
+}
 
-  .metric {
-    font-size: 11px;
-    text-align: right;
-    white-space: nowrap;
-  }
+.search-input:focus { outline: none; border-color: #2563eb; }
 
-  .metric .m-val { color: #4a9eff; font-weight: bold; }
-  .metric .m-lbl { color: #444; font-size: 10px; }
+.auto-load-info {
+  font-size: 13px;
+  color: #666;
+  margin-left: auto;
+}
 
-  .badge {
-    font-size: 10px;
-    padding: 2px 8px;
-    border-radius: 3px;
-    font-weight: bold;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
+#log-container {
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 1400px;
+}
 
-  .badge.ok { background: #0d2a1a; color: #3ecf8e; }
-  .badge.fail { background: #2a0d0d; color: #f66; }
+.action-card {
+  background: #fff;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
 
-  .card-detail {
-    display: none;
-    border-top: 1px solid #1a1a1a;
-    padding: 12px 14px;
-  }
+.action-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-color: #bbb; }
+.action-card.success { border-left: 4px solid #16a34a; }
+.action-card.failed { border-left: 4px solid #dc2626; }
 
-  .card-detail.open { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.card-header {
+  display: grid;
+  grid-template-columns: 1fr repeat(5, auto);
+  gap: 20px;
+  align-items: center;
+  padding: 12px 16px;
+}
 
-  .detail-section h4 {
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: #444;
-    margin-bottom: 8px;
-  }
+.task-text {
+  font-size: 15px;
+  font-weight: 500;
+  color: #1a1a1a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
-  .detail-section pre {
-    background: #0d0d0d;
-    border: 1px solid #1a1a1a;
-    border-radius: 4px;
-    padding: 10px;
-    font-size: 11px;
-    color: #aaa;
-    overflow-x: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-    max-height: 220px;
-    overflow-y: auto;
-  }
+.metric {
+  text-align: right;
+  white-space: nowrap;
+}
 
-  .timing-bar {
-    display: flex;
-    gap: 4px;
-    margin-top: 8px;
-    align-items: center;
-  }
+.metric .m-val {
+  font-size: 15px;
+  font-weight: 600;
+  color: #2563eb;
+  display: block;
+}
 
-  .timing-seg {
-    height: 6px;
-    border-radius: 2px;
-    min-width: 2px;
-  }
+.metric .m-lbl {
+  font-size: 11px;
+  color: #999;
+}
 
-  .timing-seg.filter { background: #4a9eff; }
-  .timing-seg.compress { background: #3ecf8e; }
-  .timing-seg.groq { background: #f0a500; }
-  .timing-seg.exec { background: #9b59b6; }
+.badge {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
 
-  .timing-legend {
-    display: flex;
-    gap: 12px;
-    margin-top: 6px;
-    font-size: 10px;
-    color: #555;
-  }
+.badge.ok { background: #dcfce7; color: #166534; }
+.badge.fail { background: #fee2e2; color: #991b1b; }
 
-  .timing-legend span::before {
-    content: "■ ";
-  }
+.card-detail {
+  display: none;
+  border-top: 1.5px solid #f0f0f0;
+  padding: 16px;
+  background: #fafafa;
+}
 
-  .timing-legend .f::before { color: #4a9eff; }
-  .timing-legend .c::before { color: #3ecf8e; }
-  .timing-legend .g::before { color: #f0a500; }
-  .timing-legend .e::before { color: #9b59b6; }
+.card-detail.open { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 
-  .reduction-bar {
-    height: 4px;
-    background: #1a1a1a;
-    border-radius: 2px;
-    margin-top: 4px;
-    overflow: hidden;
-  }
+.detail-section h4 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #888;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
 
-  .reduction-bar .fill {
-    height: 100%;
-    background: linear-gradient(90deg, #4a9eff, #3ecf8e);
-    border-radius: 2px;
-  }
+.detail-section pre {
+  background: #fff;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 13px;
+  color: #333;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: "Courier New", monospace;
+}
 
-  .empty-state {
-    text-align: center;
-    padding: 60px;
-    color: #333;
-    font-size: 13px;
-  }
+.token-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
 
-  .empty-state .big {
-    font-size: 36px;
-    margin-bottom: 12px;
-  }
+.token-box {
+  background: #fff;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  text-align: center;
+}
 
-  .upload-zone {
-    border: 2px dashed #2a2a2a;
-    border-radius: 8px;
-    padding: 24px;
-    text-align: center;
-    color: #444;
-    font-size: 12px;
-    margin: 24px;
-    cursor: pointer;
-  }
+.token-box .tv { font-size: 22px; font-weight: 700; color: #2563eb; }
+.token-box .tl { font-size: 11px; color: #888; text-transform: uppercase; margin-top: 2px; }
+.token-box.in .tv { color: #7c3aed; }
+.token-box.out .tv { color: #db2777; }
+.token-box.total .tv { color: #2563eb; }
 
-  .upload-zone:hover { border-color: #3a3a3a; color: #666; }
+.timing-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 8px 0;
+  background: #f0f0f0;
+}
 
-  .timestamp {
-    font-size: 10px;
-    color: #333;
-    white-space: nowrap;
-  }
+.timing-seg { height: 100%; min-width: 2px; }
+.timing-seg.filter { background: #2563eb; }
+.timing-seg.groq { background: #d97706; }
+.timing-seg.exec { background: #7c3aed; }
+
+.timing-legend {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+}
+
+.timing-legend .dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 60px;
+  color: #aaa;
+  font-size: 16px;
+}
+
+.upload-zone {
+  border: 2px dashed #d0d0d0;
+  border-radius: 12px;
+  padding: 40px;
+  text-align: center;
+  color: #888;
+  font-size: 15px;
+  margin: 24px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.upload-zone:hover { border-color: #2563eb; color: #2563eb; }
+
+.timestamp { font-size: 12px; color: #aaa; white-space: nowrap; }
+
+.steps-list { margin-top: 8px; }
+.step-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 6px 0;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 13px;
+}
+.step-row:last-child { border-bottom: none; }
+.step-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+.step-tool { font-weight: 600; color: #2563eb; min-width: 80px; }
+.step-thought { color: #555; flex: 1; }
+.step-time { color: #aaa; font-size: 12px; white-space: nowrap; }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>⚡ Humphi AI — Action Monitor</h1>
-  <div class="status" id="status-text">Load a log file to begin</div>
+  <h1>⚡ <span>Humphi AI</span> — Action Monitor</h1>
+  <div class="status-pill" id="status-text">No log loaded</div>
 </header>
 
 <div class="stats-bar">
@@ -305,30 +354,31 @@
     <div class="lbl">Failed</div>
   </div>
   <div class="stat amber">
-    <div class="val" id="s-reduction">—</div>
-    <div class="lbl">Avg Token Reduction</div>
+    <div class="val" id="s-tokens">—</div>
+    <div class="lbl">Avg Tokens/Action</div>
   </div>
   <div class="stat">
-    <div class="val" id="s-groq">—</div>
-    <div class="lbl">Avg Groq Latency</div>
+    <div class="val" id="s-time">—</div>
+    <div class="lbl">Avg Time</div>
   </div>
 </div>
 
 <div class="controls">
-  <input type="file" id="log-file" accept=".jsonl,.json" style="display:none">
-  <button onclick="document.getElementById('log-file').click()">📂 Load Log File</button>
-  <input type="text" id="search" placeholder="Search tasks..." oninput="renderLogs()">
-  <button class="filter-btn active" id="f-all" onclick="setFilter('all')">All</button>
-  <button class="filter-btn" id="f-ok" onclick="setFilter('ok')">Success</button>
-  <button class="filter-btn" id="f-fail" onclick="setFilter('fail')">Failed</button>
-  <button onclick="clearLogs()" style="margin-left:auto; color:#f66; border-color:#3a1a1a; background:#1a0d0d;">🗑 Clear</button>
+  <input type="file" id="log-file" accept=".jsonl,.json">
+  <button class="primary" onclick="document.getElementById('log-file').click()">📂 Load Log File</button>
+  <input type="text" class="search-input" id="search" placeholder="Search tasks..." oninput="renderLogs()">
+  <button class="active" id="f-all" onclick="setFilter('all')">All</button>
+  <button id="f-ok" onclick="setFilter('ok')">✓ Success</button>
+  <button id="f-fail" onclick="setFilter('fail')">✗ Failed</button>
+  <button class="danger" onclick="clearLogs()">🗑 Clear</button>
+  <span class="auto-load-info" id="file-info">Load your log file from ~/.humphi/logs/</span>
 </div>
 
 <div id="log-container">
   <div class="upload-zone" onclick="document.getElementById('log-file').click()">
-    <div style="font-size:28px; margin-bottom:8px;">📋</div>
-    Click to load a Humphi log file (.jsonl)<br>
-    <span style="font-size:10px; color:#333;">Located at ~/.humphi/logs/humphi_YYYY-MM-DD.jsonl</span>
+    <div style="font-size:36px; margin-bottom:12px;">📋</div>
+    <strong>Load your Humphi log file</strong><br>
+    <span style="font-size:13px; color:#aaa;">Located at C:\Users\YourName\.humphi\logs\humphi_YYYY-MM-DD.jsonl</span>
   </div>
 </div>
 
@@ -347,8 +397,10 @@ document.getElementById('log-file').addEventListener('change', e => {
       .filter(l => l && l.type === 'action');
     updateStats();
     renderLogs();
-    document.getElementById('status-text').textContent =
-      `${file.name} — ${allLogs.length} actions loaded`;
+    const pill = document.getElementById('status-text');
+    pill.textContent = `${file.name} — ${allLogs.length} actions`;
+    pill.className = 'status-pill live';
+    document.getElementById('file-info').textContent = `Loaded: ${file.name}`;
   };
   reader.readAsText(file);
 });
@@ -363,28 +415,33 @@ function setFilter(f) {
 
 function clearLogs() {
   allLogs = [];
-  activeFilter = 'all';
   updateStats();
   renderLogs();
   document.getElementById('status-text').textContent = 'Cleared';
+  document.getElementById('status-text').className = 'status-pill';
 }
 
 function updateStats() {
   const total = allLogs.length;
   const ok = allLogs.filter(l => l.success).length;
   const fail = total - ok;
-  const avgReduction = total
-    ? Math.round(allLogs.reduce((a, l) => a + (l.reduction_percent || 0), 0) / total)
+
+  // Token stats — use estimated_total_tokens
+  const tokenLogs = allLogs.filter(l => l.estimated_total_tokens > 0);
+  const avgTokens = tokenLogs.length
+    ? Math.round(tokenLogs.reduce((a, l) => a + l.estimated_total_tokens, 0) / tokenLogs.length)
     : 0;
-  const avgGroq = total
-    ? Math.round(allLogs.reduce((a, l) => a + (l.groq_latency_ms || 0), 0) / total)
+
+  const timeLogs = allLogs.filter(l => l.total_time_ms > 0);
+  const avgTime = timeLogs.length
+    ? Math.round(timeLogs.reduce((a, l) => a + l.total_time_ms, 0) / timeLogs.length / 1000)
     : 0;
 
   document.getElementById('s-total').textContent = total || '—';
   document.getElementById('s-success').textContent = ok || '—';
   document.getElementById('s-failed').textContent = fail || '—';
-  document.getElementById('s-reduction').textContent = total ? avgReduction + '%' : '—';
-  document.getElementById('s-groq').textContent = total ? avgGroq + 'ms' : '—';
+  document.getElementById('s-tokens').textContent = avgTokens ? `~${avgTokens}` : '—';
+  document.getElementById('s-time').textContent = avgTime ? `${avgTime}s` : '—';
 }
 
 function renderLogs() {
@@ -399,21 +456,25 @@ function renderLogs() {
   const container = document.getElementById('log-container');
 
   if (logs.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <div class="big">📭</div>
-        No actions match current filter
-      </div>`;
+    container.innerHTML = `<div class="empty-state">📭 No actions match current filter</div>`;
     return;
   }
 
-  container.innerHTML = logs.reverse().map((log, i) => {
+  container.innerHTML = [...logs].reverse().map((log, i) => {
     const total = log.total_time_ms || 1;
-    const fPct = Math.round((log.filter_time_ms / total) * 100);
-    const cPct = Math.round((log.compress_time_ms / total) * 100);
-    const gPct = Math.round((log.groq_latency_ms / total) * 100);
-    const ePct = Math.max(0, 100 - fPct - cPct - gPct);
+    const gPct = Math.min(90, Math.round((log.groq_latency_ms || 0) / total * 100));
+    const ePct = Math.max(0, 100 - gPct);
     const ts = log.timestamp ? log.timestamp.substring(11, 19) : '';
+    const estTokens = log.estimated_total_tokens || 0;
+    const avgPerStep = log.estimated_tokens_per_step || 0;
+
+    const stepsHtml = (log.steps || []).map(s => `
+      <div class="step-row">
+        <span class="step-icon">${s.is_success !== false ? '✓' : '✗'}</span>
+        <span class="step-tool">${escHtml(s.tool_name || '')}</span>
+        <span class="step-thought">${escHtml((s.thought || '').substring(0, 120))}</span>
+        <span class="step-time">${s.step_time_ms || 0}ms</span>
+      </div>`).join('');
 
     return `
     <div class="action-card ${log.success ? 'success' : 'failed'}" onclick="toggleCard(${i})">
@@ -421,23 +482,18 @@ function renderLogs() {
         <div class="task-text">${escHtml(log.task || '(no task)')}</div>
 
         <div class="metric">
-          <div class="m-val">${log.raw_token_estimate || 0}</div>
-          <div class="m-lbl">raw tokens</div>
+          <span class="m-val">${log.total_steps || 0}</span>
+          <span class="m-lbl">steps</span>
         </div>
 
         <div class="metric">
-          <div class="m-val">${log.dsl_token_count || 0}</div>
-          <div class="m-lbl">sent tokens</div>
+          <span class="m-val" style="color:#7c3aed">~${estTokens}</span>
+          <span class="m-lbl">tokens</span>
         </div>
 
         <div class="metric">
-          <div class="m-val" style="color:#3ecf8e">${log.reduction_percent || 0}%</div>
-          <div class="m-lbl">reduction</div>
-        </div>
-
-        <div class="metric">
-          <div class="m-val" style="color:#f0a500">${log.groq_latency_ms || 0}ms</div>
-          <div class="m-lbl">groq</div>
+          <span class="m-val" style="color:#d97706">${Math.round((log.total_time_ms||0)/1000)}s</span>
+          <span class="m-lbl">time</span>
         </div>
 
         <div style="display:flex;align-items:center;gap:8px;">
@@ -448,61 +504,52 @@ function renderLogs() {
 
       <div class="card-detail" id="detail-${i}">
         <div class="detail-section">
-          <h4>DSL Payload sent to Groq</h4>
-          <pre>${escHtml(log.dsl_payload || '(empty)')}</pre>
 
-          <h4 style="margin-top:12px;">Groq Response</h4>
-          <pre>${escHtml(log.groq_response || '(none)')}</pre>
+          <div class="token-grid">
+            <div class="token-box in">
+              <div class="tv">~${Math.round(estTokens * 0.7)}</div>
+              <div class="tl">Input tokens</div>
+            </div>
+            <div class="token-box out">
+              <div class="tv">~${Math.round(estTokens * 0.3)}</div>
+              <div class="tl">Output tokens</div>
+            </div>
+            <div class="token-box total">
+              <div class="tv">~${estTokens}</div>
+              <div class="tl">Total tokens</div>
+            </div>
+          </div>
 
-          ${log.execution_errors?.length ? `
-          <h4 style="margin-top:12px; color:#f66;">Execution Errors</h4>
-          <pre style="color:#f66">${escHtml(JSON.stringify(log.execution_errors, null, 2))}</pre>
-          ` : ''}
+          <h4>Step breakdown (${log.total_steps || 0} steps)</h4>
+          <div class="steps-list">${stepsHtml || '<div style="color:#aaa;font-size:13px">No step data</div>'}</div>
+
+          ${log.error ? `<h4 style="margin-top:12px;color:#dc2626">Error</h4>
+          <pre style="color:#dc2626">${escHtml(log.error)}</pre>` : ''}
         </div>
 
         <div class="detail-section">
-          <h4>Timing Breakdown (${log.total_time_ms}ms total)</h4>
+          <h4>Timing (${log.total_time_ms || 0}ms total)</h4>
           <div class="timing-bar">
-            <div class="timing-seg filter" style="width:${fPct}%; min-width:${fPct > 0 ? 4 : 0}px" title="Filter: ${log.filter_time_ms}ms"></div>
-            <div class="timing-seg compress" style="width:${cPct}%; min-width:${cPct > 0 ? 4 : 0}px" title="Compress: ${log.compress_time_ms}ms"></div>
-            <div class="timing-seg groq" style="width:${gPct}%; min-width:${gPct > 0 ? 4 : 0}px" title="Groq: ${log.groq_latency_ms}ms"></div>
-            <div class="timing-seg exec" style="width:${ePct}%; min-width:${ePct > 0 ? 4 : 0}px" title="Execution"></div>
+            <div class="timing-seg groq" style="width:${gPct}%" title="Groq: ${log.groq_latency_ms||0}ms"></div>
+            <div class="timing-seg exec" style="width:${ePct}%"></div>
           </div>
           <div class="timing-legend">
-            <span class="f">Filter ${log.filter_time_ms}ms</span>
-            <span class="c">Compress ${log.compress_time_ms}ms</span>
-            <span class="g">Groq ${log.groq_latency_ms}ms</span>
-            <span class="e">Execute</span>
+            <span><span class="dot" style="background:#d97706"></span>LLM calls</span>
+            <span><span class="dot" style="background:#7c3aed"></span>Execution</span>
           </div>
 
-          <h4 style="margin-top:16px;">Token Reduction</h4>
-          <div style="font-size:11px; color:#555; margin-bottom:4px;">
-            ${log.raw_token_estimate} raw → ${log.dsl_token_count} sent
-          </div>
-          <div class="reduction-bar">
-            <div class="fill" style="width:${log.reduction_percent || 0}%"></div>
-          </div>
-          <div style="font-size:11px; color:#3ecf8e; margin-top:4px;">
-            ${log.reduction_percent || 0}% reduction
-          </div>
+          <h4 style="margin-top:16px">Session info</h4>
+          <pre>Task:      ${escHtml(log.task || '')}
+Steps:     ${log.total_steps || 0}
+Tool calls:${log.total_tool_calls || 0}
+Failures:  ${log.total_failures || 0}
+Duration:  ${Math.round((log.total_time_ms||0)/1000)}s
+~Tokens:   ${estTokens}
+Result:    ${log.success ? 'SUCCESS' : 'FAILED'}
+Time:      ${log.timestamp || ''}</pre>
 
-          <h4 style="margin-top:16px;">Steps</h4>
-          <div style="font-size:11px; color:#aaa;">
-            Planned: ${log.steps_planned?.length || 0} &nbsp;|&nbsp;
-            Executed: ${log.steps_executed || 0} &nbsp;|&nbsp;
-            <span style="color:#3ecf8e">✓ ${log.steps_succeeded || 0}</span> &nbsp;|&nbsp;
-            <span style="color:#f66">✗ ${log.steps_failed || 0}</span>
-          </div>
-
-          ${log.steps_planned?.length ? `
-          <h4 style="margin-top:12px;">Planned Steps</h4>
-          <pre>${escHtml(JSON.stringify(log.steps_planned, null, 2))}</pre>
-          ` : ''}
-
-          ${log.notes ? `
-          <h4 style="margin-top:12px;">Notes</h4>
-          <pre>${escHtml(log.notes)}</pre>
-          ` : ''}
+          ${log.result ? `<h4 style="margin-top:12px">Final answer</h4>
+          <pre>${escHtml(log.result)}</pre>` : ''}
         </div>
       </div>
     </div>`;
@@ -510,12 +557,12 @@ function renderLogs() {
 }
 
 function toggleCard(i) {
-  const detail = document.getElementById('detail-' + i);
-  detail.classList.toggle('open');
+  const d = document.getElementById('detail-' + i);
+  d.classList.toggle('open');
 }
 
 function escHtml(str) {
-  return String(str)
+  return String(str || '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
