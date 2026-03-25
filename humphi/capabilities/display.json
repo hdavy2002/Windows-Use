@@ -1,0 +1,17 @@
+{
+  "id": "display",
+  "name": "Display & Personalization",
+  "keywords": ["display", "resolution", "wallpaper", "theme", "dark mode", "brightness", "screen", "monitor", "font size", "scaling", "night light", "taskbar"],
+  "launch": {
+    "display": "Start-Process ms-settings:display",
+    "personalization": "Start-Process ms-settings:personalization",
+    "themes": "Start-Process ms-settings:themes",
+    "taskbar": "Start-Process ms-settings:taskbar",
+    "colors": "Start-Process ms-settings:colors"
+  },
+  "diagnostics": [
+    "Get-CimInstance Win32_VideoController | Select-Object Name,CurrentHorizontalResolution,CurrentVerticalResolution",
+    "(Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize').AppsUseLightTheme"
+  ],
+  "prompt": "You are helping with display/personalization. Can open display settings for resolution, scaling, night light. Personalization for themes, wallpaper, colors, taskbar. Check current resolution and theme mode via diagnostics."
+}

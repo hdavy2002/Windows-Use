@@ -1,0 +1,15 @@
+{
+  "id": "bluetooth",
+  "name": "Bluetooth & Devices",
+  "keywords": ["bluetooth", "pair", "headphones", "speaker", "mouse", "keyboard", "controller", "device", "connected", "pairing"],
+  "launch": {
+    "bluetooth": "Start-Process ms-settings:bluetooth",
+    "devices": "Start-Process ms-settings:connecteddevices",
+    "sound": "Start-Process ms-settings:sound"
+  },
+  "diagnostics": [
+    "Get-PnpDevice -Class Bluetooth | Select-Object Status,FriendlyName",
+    "Get-Service bthserv | Select-Object Status,StartType"
+  ],
+  "prompt": "You are helping with Bluetooth/device issues. Check if Bluetooth service is running. Guide user through pairing: Settings → Bluetooth → Add device → select device type → wait for discovery → select device → Connect. If issues: toggle Bluetooth off/on, restart Bluetooth service, remove and re-pair device."
+}

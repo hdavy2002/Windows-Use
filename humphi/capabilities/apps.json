@@ -1,0 +1,16 @@
+{
+  "id": "apps",
+  "name": "Apps & Programs",
+  "keywords": ["uninstall", "install", "program", "app", "software", "remove program", "add program", "startup", "default app"],
+  "launch": {
+    "apps": "Start-Process ms-settings:appsfeatures",
+    "default_apps": "Start-Process ms-settings:defaultapps",
+    "startup": "Start-Process ms-settings:startupapps",
+    "legacy": "Start-Process appwiz.cpl"
+  },
+  "diagnostics": [
+    "Get-Package | Select-Object -First 20 Name,Version | Format-Table",
+    "Get-CimInstance -ClassName Win32_Product | Select-Object -First 15 Name,Version | Format-Table"
+  ],
+  "prompt": "You are helping manage apps. To uninstall: open Settings → Apps → find the app → click Uninstall. For legacy apps use appwiz.cpl. To manage startup apps: Settings → Apps → Startup. To change defaults: Settings → Default apps. Can list installed packages via Get-Package."
+}

@@ -1,0 +1,15 @@
+{
+  "id": "files",
+  "name": "File Management",
+  "keywords": ["files", "folder", "organize", "downloads", "desktop", "move files", "find file", "search file", "rename", "delete files", "duplicate", "sort files", "clean up"],
+  "launch": {
+    "downloads": "Start-Process explorer.exe -ArgumentList (Join-Path $env:USERPROFILE 'Downloads')",
+    "documents": "Start-Process explorer.exe -ArgumentList (Join-Path $env:USERPROFILE 'Documents')",
+    "desktop": "Start-Process explorer.exe -ArgumentList (Join-Path $env:USERPROFILE 'Desktop')"
+  },
+  "diagnostics": [
+    "Get-ChildItem (Join-Path $env:USERPROFILE 'Downloads') | Group-Object Extension | Sort-Object Count -Descending | Select-Object Count,Name | Format-Table",
+    "Get-ChildItem (Join-Path $env:USERPROFILE 'Downloads') | Sort-Object Length -Descending | Select-Object -First 10 Name,@{N='SizeMB';E={[math]::Round($_.Length/1MB,1)}} | Format-Table"
+  ],
+  "prompt": "You are helping organize files. You can: list files by type/size, find files by name, move files to folders, open Explorer at a location. For organization: group by extension (PDFs, images, docs, archives), move to subfolders. Always confirm before moving/deleting. Show what you'll do first."
+}

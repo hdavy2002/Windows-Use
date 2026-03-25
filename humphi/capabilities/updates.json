@@ -1,0 +1,15 @@
+{
+  "id": "updates",
+  "name": "Windows Update & Security",
+  "keywords": ["update", "windows update", "security", "antivirus", "defender", "firewall", "patch", "restart", "reboot"],
+  "launch": {
+    "update": "Start-Process ms-settings:windowsupdate",
+    "defender": "Start-Process ms-settings:windowsdefender",
+    "recovery": "Start-Process ms-settings:recovery"
+  },
+  "diagnostics": [
+    "Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 5 HotFixID,InstalledOn,Description | Format-Table",
+    "Get-MpComputerStatus | Select-Object AntivirusEnabled,RealTimeProtectionEnabled,AntivirusSignatureLastUpdated"
+  ],
+  "prompt": "You are helping with updates and security. Can check recent updates, Windows Defender status, open update settings. For update issues: open Settings → Update → Check for updates. For Defender: check if real-time protection is on, signatures are current."
+}
