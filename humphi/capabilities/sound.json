@@ -1,7 +1,15 @@
 {
   "id": "sound",
+  "version": "1.0.0",
   "name": "Sound & Audio",
   "keywords": ["sound", "audio", "volume", "microphone", "speaker", "headphone", "no sound", "mute", "output device", "input device"],
+  "direct_commands": {
+    "open sound settings": "Start-Process ms-settings:sound",
+    "open sound": "Start-Process ms-settings:sound",
+    "open volume mixer": "Start-Process sndvol.exe",
+    "fix sound": "Start-Process ms-settings:sound",
+    "no audio": "Start-Process ms-settings:sound"
+  },
   "launch": {
     "sound": "Start-Process ms-settings:sound",
     "volume_mixer": "Start-Process sndvol.exe"

@@ -1,7 +1,14 @@
 {
   "id": "files",
+  "version": "1.0.0",
   "name": "File Management",
   "keywords": ["files", "folder", "organize", "downloads", "desktop", "move files", "find file", "search file", "rename", "delete files", "duplicate", "sort files", "clean up"],
+  "direct_commands": {
+    "open downloads": "Start-Process explorer.exe -ArgumentList (Join-Path $env:USERPROFILE 'Downloads')",
+    "open documents": "Start-Process explorer.exe -ArgumentList (Join-Path $env:USERPROFILE 'Documents')",
+    "open desktop": "Start-Process explorer.exe -ArgumentList (Join-Path $env:USERPROFILE 'Desktop')",
+    "open file explorer": "Start-Process explorer.exe"
+  },
   "launch": {
     "downloads": "Start-Process explorer.exe -ArgumentList (Join-Path $env:USERPROFILE 'Downloads')",
     "documents": "Start-Process explorer.exe -ArgumentList (Join-Path $env:USERPROFILE 'Documents')",

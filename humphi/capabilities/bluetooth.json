@@ -1,7 +1,14 @@
 {
   "id": "bluetooth",
+  "version": "1.0.0",
   "name": "Bluetooth & Devices",
   "keywords": ["bluetooth", "pair", "headphones", "speaker", "mouse", "keyboard", "controller", "device", "connected", "pairing"],
+  "direct_commands": {
+    "open bluetooth": "Start-Process ms-settings:bluetooth",
+    "open bluetooth settings": "Start-Process ms-settings:bluetooth",
+    "open devices": "Start-Process ms-settings:connecteddevices",
+    "pair device": "Start-Process ms-settings:bluetooth"
+  },
   "launch": {
     "bluetooth": "Start-Process ms-settings:bluetooth",
     "devices": "Start-Process ms-settings:connecteddevices",

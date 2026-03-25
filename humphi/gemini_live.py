@@ -16,13 +16,40 @@ from pathlib import Path
 LOG_DIR = Path.home() / ".humphi" / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
+import os
+
 # ── Config ────────────────────────────────────────────────────────────────────
 GEMINI_MODEL = "gemini-2.5-flash-native-audio-preview"
-GEMINI_WS_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+
+# Use BIFROST_HOST for proxy, or CLOUDFLARE_GATEWAY for direct-style gateway
+_BIFROST = os.environ.get("BIFROST_HOST", "https://api.humphi.com:8000")
+_GATEWAY = os.environ.get("CLOUDFLARE_GATEWAY") 
+_KEY = os.environ.get("GEMINI_API_KEY", "")
+CF_AIG_TOKEN = os.environ.get("CF_AIG_TOKEN")
+
+if _GATEWAY:
+    # If gateway is set, use it. Replace http/https with ws/wss
+    _HOST = _GATEWAY
+    if _HOST.startswith("http://"): _HOST = _HOST.replace("http://", "ws://", 1)
+    elif _HOST.startswith("https://"): _HOST = _HOST.replace("https://", "wss://", 1)
+    # Cloudflare AI Gateway suffix for Gemini Realtime
+    GEMINI_WS_URL = f"{_HOST}/google-ai-studio/v1beta/models/{GEMINI_MODEL}:generateContent?key={_KEY}"
+else:
+    # Bifrost mode
+    _HOST = _BIFROST
+    if _HOST.startswith("http://"): _HOST = _HOST.replace("http://", "ws://", 1)
+    elif _HOST.startswith("https://"): _HOST = _HOST.replace("https://", "wss://", 1)
+    GEMINI_WS_URL = f"{_HOST}/ws/gemini-live"
+
 SESSION_MAX_SEC = 15 * 60       # Reset every 15 min
-MAX_COST_PER_SESSION = 2.00     # USD hard cap
+MAX_TURNS_PER_SESSION = 50      # Circuit breaker
 MIN_TURN_GAP_SEC = 15           # Max 4 turns/min
 VOICE_NAME = "Aoede"            # Clear, professional
+
+# 3-tier cost ladder (Phase 2)
+COST_WARN = 1.00       # Notify user
+COST_SOFT = 1.50       # Suggest ending
+COST_HARD = 2.00       # Force reset
 
 # Cost rates per 1M tokens
 COST_VIDEO_IN = 0.30
@@ -55,6 +82,21 @@ SILENCE RULES (critical for cost):
 WHEN USER SAYS "PAUSE" OR "STOP":
 - Stop all commentary, respond only when user says "resume" or asks a question
 
+CURSOR AWARENESS (Phase 3):
+- Each frame includes cursor position as text metadata: "Cursor: (x, y)"
+- Use cursor position to give precise guidance: "Move slightly right from where your cursor is"
+- Reference cursor proximity: "Your cursor is close — just move it down about 2cm"
+
+VISUAL GUIDANCE COMMANDS (Phase 3):
+- When you want to highlight a screen area, respond with: HIGHLIGHT(x, y, w, h, text)
+- When you want to set a confidence signal, respond with: SIGNAL(watch|prepare|act)
+- Examples:
+  - HIGHLIGHT(100, 200, 150, 40, Click the Start button)
+  - SIGNAL(act)
+  - HIGHLIGHT(500, 300, 200, 30, Type your password here)
+- Use HIGHLIGHT when giving "click here" instructions
+- Use SIGNAL for trading/urgent situations only
+
 NEVER:
 - Make up information you cannot see
 - Guess if screen is unclear — ask user to describe
@@ -79,12 +121,14 @@ class GeminiLiveSession:
                  on_audio_out=None,
                  on_text_out=None,
                  on_turn_complete=None,
-                 on_session_end=None):
+                 on_session_end=None,
+                 on_guidance_cmd=None):
         self.api_key = api_key
         self.on_audio_out = on_audio_out      # callback(pcm_bytes)
         self.on_text_out = on_text_out        # callback(text_str)
         self.on_turn_complete = on_turn_complete
         self.on_session_end = on_session_end
+        self.on_guidance_cmd = on_guidance_cmd  # callback(cmd_type, args)
 
         self._ws = None
         self._running = False
@@ -94,6 +138,8 @@ class GeminiLiveSession:
         self._last_turn_time = 0
         self._total_tokens = 0
         self._total_cost = 0.0
+        self._cost_warned = False
+        self._cost_soft_warned = False
         self._context_summary = ""
         self._recv_task = None
 
@@ -199,8 +245,37 @@ class GeminiLiveSession:
             elif "text" in part:
                 text = part["text"]
                 _dlog(f"GEMINI TEXT: {text[:100]}")
-                if self.on_text_out:
+                # Phase 3: Parse visual guidance commands
+                text = self._parse_guidance_cmds(text)
+                if text.strip() and self.on_text_out:
                     self.on_text_out(text)
+
+    # ── Phase 3: Guidance command parsing ─────────────────────────────────
+
+    def _parse_guidance_cmds(self, text: str) -> str:
+        """Extract HIGHLIGHT(...) and SIGNAL(...) commands from text.
+        Fires on_guidance_cmd callback and returns cleaned text."""
+        import re
+        # HIGHLIGHT(x, y, w, h, text)
+        hl_pattern = r'HIGHLIGHT\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([^)]+)\)'
+        for m in re.finditer(hl_pattern, text):
+            x, y, w, h = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+            label = m.group(5).strip()
+            if self.on_guidance_cmd:
+                self.on_guidance_cmd("highlight", {"x": x, "y": y, "w": w, "h": h, "text": label})
+            _dlog(f"GUIDANCE: HIGHLIGHT({x},{y},{w},{h},{label})")
+        text = re.sub(hl_pattern, '', text)
+
+        # SIGNAL(watch|prepare|act)
+        sig_pattern = r'SIGNAL\((watch|prepare|act)\)'
+        for m in re.finditer(sig_pattern, text, re.IGNORECASE):
+            signal_type = m.group(1).lower()
+            if self.on_guidance_cmd:
+                self.on_guidance_cmd("signal", {"type": signal_type})
+            _dlog(f"GUIDANCE: SIGNAL({signal_type})")
+        text = re.sub(sig_pattern, '', text, flags=re.IGNORECASE)
+
+        return text.strip()
 
     # ── Send methods ──────────────────────────────────────────────────────
 
@@ -217,6 +292,37 @@ class GeminiLiveSession:
             }
         }
         await self._ws.send(json.dumps(msg))
+        # Track cost
+        cost = (TOKENS_PER_FRAME_LOW * COST_VIDEO_IN) / 1_000_000
+        self._total_cost += cost
+
+    async def send_video_frame_with_metadata(self, frame_data: dict):
+        """Phase 3: Send frame + cursor position as context.
+        frame_data: dict from capture_frame_with_metadata()."""
+        if not self._running or self._speaking:
+            return
+        # Send frame
+        msg = {
+            "realtimeInput": {
+                "mediaChunks": [{
+                    "mimeType": "image/jpeg",
+                    "data": frame_data["frame"]
+                }]
+            }
+        }
+        await self._ws.send(json.dumps(msg))
+        # Send cursor position as text context
+        cx, cy = frame_data.get("cursor", (0, 0))
+        mode = "COLOR" if frame_data.get("is_color") else "GRAY"
+        ctx_msg = {
+            "clientContent": {
+                "turns": [{"role": "user", "parts": [
+                    {"text": f"[Cursor: ({cx}, {cy}) | Mode: {mode}]"}
+                ]}],
+                "turnComplete": False  # not a full turn — just metadata
+            }
+        }
+        await self._ws.send(json.dumps(ctx_msg))
         # Track cost
         cost = (TOKENS_PER_FRAME_LOW * COST_VIDEO_IN) / 1_000_000
         self._total_cost += cost
@@ -251,7 +357,7 @@ class GeminiLiveSession:
     # ── Cost Controls ─────────────────────────────────────────────────────
 
     async def _check_limits(self):
-        """Check session time and cost limits."""
+        """Check session time, turn count, and cost limits (3-tier ladder)."""
         elapsed = time.time() - self._start_time
 
         # Session time limit — reset every 15 min
@@ -260,10 +366,26 @@ class GeminiLiveSession:
             await self._reset_session()
             return
 
-        # Cost cap
-        if self._total_cost > MAX_COST_PER_SESSION:
-            _dlog(f"COST: ${self._total_cost:.2f} exceeds cap, resetting...")
+        # Turn count circuit breaker
+        if self._turn_count >= MAX_TURNS_PER_SESSION:
+            _dlog(f"COST: {self._turn_count} turns, circuit breaker triggered")
             await self._reset_session()
+            return
+
+        # 3-tier cost ladder
+        if self._total_cost >= COST_HARD:
+            _dlog(f"COST: ${self._total_cost:.2f} hit HARD cap, resetting...")
+            await self._reset_session()
+        elif self._total_cost >= COST_SOFT and not self._cost_soft_warned:
+            self._cost_soft_warned = True
+            _dlog(f"COST: ${self._total_cost:.2f} hit SOFT cap, suggesting end")
+            if self.on_text_out:
+                self.on_text_out(f"⚠️ Session cost: ${self._total_cost:.2f}. Consider ending soon to save costs.")
+        elif self._total_cost >= COST_WARN and not self._cost_warned:
+            self._cost_warned = True
+            _dlog(f"COST: ${self._total_cost:.2f} hit WARN threshold")
+            if self.on_text_out:
+                self.on_text_out(f"💰 Session cost: ${self._total_cost:.2f}")
 
     async def _reset_session(self):
         """Close session and reopen with context summary."""

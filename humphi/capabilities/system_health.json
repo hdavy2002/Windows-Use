@@ -1,7 +1,19 @@
 {
   "id": "system_health",
+  "version": "1.0.0",
   "name": "System Health & Performance",
   "keywords": ["slow", "performance", "cpu", "memory", "ram", "disk", "storage", "space", "task manager", "speed", "lag", "freeze", "crash", "startup slow"],
+  "direct_commands": {
+    "open task manager": "Start-Process taskmgr.exe",
+    "open system info": "Start-Process msinfo32.exe",
+    "open disk cleanup": "Start-Process cleanmgr.exe",
+    "open device manager": "Start-Process devmgmt.msc",
+    "open disk management": "Start-Process diskmgmt.msc",
+    "open services": "Start-Process services.msc",
+    "check cpu": "Get-Process | Sort-Object CPU -Descending | Select-Object -First 10 Name,CPU,WorkingSet64 | Format-Table",
+    "check disk": "Get-PSDrive -PSProvider FileSystem | Select-Object Name,@{N='UsedGB';E={[math]::Round($_.Used/1GB,1)}},@{N='FreeGB';E={[math]::Round($_.Free/1GB,1)}} | Format-Table",
+    "check ram": "Get-CimInstance Win32_OperatingSystem | Select-Object @{N='TotalRAM_GB';E={[math]::Round($_.TotalVisibleMemorySize/1MB,1)}},@{N='FreeRAM_GB';E={[math]::Round($_.FreePhysicalMemory/1MB,1)}}"
+  },
   "launch": {
     "task_manager": "Start-Process taskmgr.exe",
     "system_info": "Start-Process msinfo32.exe",

@@ -1,41 +1,45 @@
 """
 main_humphi.py — Humphi AI: Desktop Operator
 
-Phase 0+1 implementation:
-- Allowlist security (no blacklist)
+Phase 0+1+2 implementation:
+- Allowlist security (no blacklist) + prompt injection guard + consent
 - Streaming responses (perceived 3x speed)
-- Typing indicator
-- Structured action objects (no raw cmd)
 - Two-LLM strategy (mini for routing, full for answers)
-- Compressed system prompt (~80 tokens)
-- max_tokens per intent type
-- History truncation (last 2 turns + summary)
-- Inline action confirmation
-- Minimize button
+- Direct command bypass ($0 cost for ~30% of requests)
+- Session memory + user type inference
+- Quick-action chips + adaptive FPS + 3-tier cost ladder
 """
 
 import sys, os, json, asyncio, threading, time, subprocess, re
 from pathlib import Path
 from datetime import datetime
 from functools import lru_cache
-import tkinter as tk
-from tkinter import scrolledtext
 
-from PIL import Image, ImageDraw as PilDraw
-import pystray
 import httpx
 
 from humphi.gemini_live import GeminiLiveSession, _dlog
-from humphi.screen_capture import capture_frame, _fingerprint
+from humphi.screen_capture import (
+    capture_frame, _fingerprint, compute_diff, get_adaptive_delay,
+    capture_frame_with_metadata, IdleDetector, get_cursor_position
+)
 from humphi.audio import MicCapture, SpeakerOutput, HAS_AUDIO
 from humphi.overlay import LiveTicker
-from humphi.capabilities import match_capability, build_context_prompt
+from humphi.capabilities import match_capability, build_context_prompt, check_direct_command
+from humphi.memory import SessionMemory
 
 # ── Config ────────────────────────────────────────────────────────────────────
-GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
-ROUTER_MODEL = "openai/gpt-4o-mini"   # cheap: ~$0.000008/classify
-CHAT_MODEL = "openai/gpt-4.1"         # full: responses only
-CHAT_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+# Use BIFROST_HOST for proxy, or CLOUDFLARE_GATEWAY for direct-style gateway
+_BIFROST = os.environ.get("BIFROST_HOST", "https://api.humphi.com:8000")
+_GATEWAY = os.environ.get("CLOUDFLARE_GATEWAY") 
+CF_AIG_TOKEN = os.environ.get("CF_AIG_TOKEN")
+
+# If gateway is set, we bypass Bifrost for testing
+BIFROST_URL = f"{_GATEWAY}/v1/chat/completions" if _GATEWAY else f"{_BIFROST}/v1/chat/completions"
+
+GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "bifrost")
+ROUTER_MODEL = "gemini-2.0-flash" 
+CHAT_MODEL = "gemini-1.5-flash" # Use 1.5/2.0 as they are widely available
+CHAT_KEY = os.environ.get("OPENROUTER_API_KEY", "bifrost")
 LOG_DIR = Path.home() / ".humphi" / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 DIFF_THRESHOLD = 0.03
@@ -85,6 +89,68 @@ def is_allowed(cmd: str) -> bool:
             if target in ALLOWED_EXES: return True
     return False
 
+# ── PHASE 0: Prompt injection guard ───────────────────────────────────────────
+INJECTION_PATTERNS = [
+    "ignore previous instructions", "ignore all previous", "disregard previous",
+    "forget your instructions", "forget all instructions", "forget everything above",
+    "jailbreak", "dan mode", "developer mode", "do anything now",
+    "pretend you are", "pretend to be", "act as if you have no restrictions",
+    "you are now", "new persona", "bypass restrictions", "override safety",
+    "ignore safety", "no restrictions", "unrestricted mode",
+    "system prompt", "reveal your prompt", "show your instructions",
+    "what are your rules", "repeat your system message",
+]
+
+def check_injection(text: str) -> tuple[bool, str]:
+    """Scan user input for prompt injection patterns.
+    Returns (is_safe, reason). Logs flagged attempts."""
+    low = text.lower()
+    for pattern in INJECTION_PATTERNS:
+        if pattern in low:
+            reason = f"Blocked injection pattern: '{pattern}'"
+            _log_injection(text, pattern)
+            return False, reason
+    return True, ""
+
+def _log_injection(text: str, pattern: str):
+    """Log injection attempts for admin review."""
+    try:
+        log_file = LOG_DIR / "injection_attempts.jsonl"
+        entry = json.dumps({"ts": datetime.now().isoformat(), "pattern": pattern,
+                            "input": text[:200]}, ensure_ascii=False)
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(entry + "\n")
+    except: pass
+
+# ── PHASE 0: Screen capture consent ──────────────────────────────────────────
+CONSENT_FILE = Path.home() / ".humphi" / "consent.json"
+AUDIT_FILE = LOG_DIR / "live_audit.jsonl"
+
+def _load_consent() -> bool:
+    """Check if user has previously consented to screen capture."""
+    try:
+        if CONSENT_FILE.exists():
+            data = json.loads(CONSENT_FILE.read_text())
+            return data.get("screen_capture_consent", False)
+    except: pass
+    return False
+
+def _save_consent():
+    """Store consent flag."""
+    CONSENT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CONSENT_FILE.write_text(json.dumps({
+        "screen_capture_consent": True,
+        "consented_at": datetime.now().isoformat()
+    }))
+
+def _log_live_session(event: str, **extra):
+    """Append audit event for live sessions (GDPR/ISO 27001)."""
+    try:
+        entry = {"ts": datetime.now().isoformat(), "event": event, **extra}
+        with open(AUDIT_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except: pass
+
 def run_cmd(cmd: str) -> tuple[bool, str]:
     try:
         r = subprocess.run(["powershell","-NoProfile","-Command",cmd],
@@ -133,7 +199,7 @@ def strip_actions(text: str) -> str:
 def call_ai_stream(messages, api_key, model=CHAT_MODEL, max_tokens=200, on_token=None):
     """Streaming AI call — calls on_token(text_chunk) as tokens arrive."""
     full = []
-    with httpx.stream("POST", "https://openrouter.ai/api/v1/chat/completions",
+    with httpx.stream("POST", BIFROST_URL,
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json={"model": model, "messages": messages, "max_tokens": max_tokens,
               "temperature": 0.3, "stream": True},
@@ -155,11 +221,18 @@ def call_ai_stream(messages, api_key, model=CHAT_MODEL, max_tokens=200, on_token
 @lru_cache(maxsize=500)
 def classify_intent(msg_normalized: str) -> str:
     """Cheap LLM call to classify intent. Cached for repeat phrases."""
-    r = httpx.post("https://openrouter.ai/api/v1/chat/completions",
-        headers={"Authorization": f"Bearer {CHAT_KEY}", "Content-Type": "application/json"},
+    headers = {
+        "Authorization": f"Bearer {CHAT_KEY}",
+        "Content-Type": "application/json"
+    }
+    if CF_AIG_TOKEN and _GATEWAY in BIFROST_URL:
+        headers["cf-aig-authorization"] = f"Bearer {CF_AIG_TOKEN}"
+
+    r = httpx.post(BIFROST_URL,
+        headers=headers,
         json={"model": ROUTER_MODEL, "max_tokens": 10, "temperature": 0,
               "messages": [
-                  {"role": "system", "content": "Classify into ONE word: network, bluetooth, apps, system_health, files, display, updates, sound, general"},
+                  {"role": "system", "content": "Classify into ONE word: network, bluetooth, apps, system_health, files, display, updates, sound, printer, accounts, privacy, general"},
                   {"role": "user", "content": msg_normalized}
               ]}, timeout=10)
     if r.status_code == 200:
@@ -170,336 +243,259 @@ def normalize_msg(text: str) -> str:
     """Normalize for intent cache: lowercase, strip punctuation."""
     return re.sub(r'[^\w\s]', '', text.lower()).strip()
 
-# ── App ───────────────────────────────────────────────────────────────────────
+# ── Phase 5: Webview Bridge (pywebview) ──────────────────────────────────────
 
-class HumphiAI:
+import webview
+
+class BackendApi:
     def __init__(self):
+        self._window = None
+        self._history = [{"role": "system", "content": SYS_PROMPT}]
+        self._session_summary = ""
+        self._memory = SessionMemory()
+        self._is_live = False
         self._live_session = None
         self._live_loop = None
         self._mic = None
-        self._speaker = None
-        self._is_live = False
         self._mic_on = False
+        self._speaker = None
+        self._pending_confirmations = {}
         self._last_fp = b""
-        self._history = [{"role": "system", "content": SYS_PROMPT}]
-        self._session_summary = ""
-        self._minimized = False
-        self._pending_action = None  # for confirmation UI
+        
+        # Pre-warm
+        threading.Thread(target=self._prewarm, daemon=True).start()
 
-        self.root = tk.Tk(); self.root.withdraw()
-        self.ticker = LiveTicker(self.root)
-        self._build_ui()
+    def set_window(self, window):
+        self._window = window
 
-    def _build_ui(self):
-        BG, FG, ACCENT, DIM, GREEN, RED, INP, HDR = \
-            "#1a1b26","#e1e5f2","#7aa2f7","#8890a8","#9ece6a","#f7768e","#24283b","#1f2335"
-        self._colors = {"BG":BG,"FG":FG,"ACCENT":ACCENT,"DIM":DIM,"GREEN":GREEN,"RED":RED,"INP":INP,"HDR":HDR}
+    def _prewarm(self):
+        try:
+            from humphi.capabilities import list_capabilities
+            list_capabilities()
+            classify_intent("warm")
+        except: pass
 
-        self.win = tk.Toplevel(self.root)
-        self.win.title("Humphi AI")
-        self.win.overrideredirect(True)
-        self.win.attributes("-topmost", True)
-        self.win.attributes("-alpha", 0.95)
-        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        self._full_h, self._mini_h = 420, 42
-        self.win.geometry(f"430x{self._full_h}+{sw-442}+{sh-self._full_h-50}")
-        self.win.configure(bg=BG)
-
-        # Header with minimize + close
-        hdr = tk.Frame(self.win, bg=HDR, height=42); hdr.pack(side=tk.TOP, fill=tk.X); hdr.pack_propagate(False)
-        tk.Label(hdr, text="\u26A1 Humphi AI", font=("Segoe UI",12,"bold"), fg=ACCENT, bg=HDR).pack(side=tk.LEFT, padx=12)
-        tk.Button(hdr, text="\u2715", font=("Segoe UI",11), fg=RED, bg=HDR, bd=0, padx=6, cursor="hand2",
-            command=lambda: self.win.withdraw()).pack(side=tk.RIGHT, padx=2)
-        tk.Button(hdr, text="\u2500", font=("Segoe UI",11), fg=DIM, bg=HDR, bd=0, padx=6, cursor="hand2",
-            command=self._toggle_minimize).pack(side=tk.RIGHT, padx=2)
-
-        # Body (hidden when minimized)
-        self._body = tk.Frame(self.win, bg=BG); self._body.pack(fill=tk.BOTH, expand=True)
-
-        # Bottom bar
-        bot = tk.Frame(self._body, bg=BG); bot.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=8)
-
-        # Confirmation bar (hidden by default)
-        self._confirm_frame = tk.Frame(bot, bg="#1f2335"); self._confirm_frame.pack(fill=tk.X, pady=(0,4))
-        self._confirm_label = tk.Label(self._confirm_frame, text="", font=("Consolas",10), fg=DIM, bg="#1f2335",
-            wraplength=400, justify=tk.LEFT, anchor="w", padx=8, pady=4)
-        self._confirm_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        tk.Button(self._confirm_frame, text="\u2714", font=("Segoe UI",11,"bold"), fg=GREEN, bg="#1f2335",
-            bd=0, padx=6, cursor="hand2", command=self._confirm_action).pack(side=tk.RIGHT)
-        tk.Button(self._confirm_frame, text="\u2718", font=("Segoe UI",11), fg=RED, bg="#1f2335",
-            bd=0, padx=6, cursor="hand2", command=self._cancel_action).pack(side=tk.RIGHT)
-        self._confirm_frame.pack_forget()
-
-        # Live + Mic row
-        lr = tk.Frame(bot, bg=BG); lr.pack(fill=tk.X, pady=(0,4))
-        self.live_btn = tk.Button(lr, text="\U0001F534 Go Live Help", font=("Segoe UI",10,"bold"),
-            fg="white", bg="#dc2626", bd=0, pady=5, padx=12, cursor="hand2", command=self._toggle_live)
-        self.live_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0,4))
-        self.mic_btn = tk.Button(lr, text="\U0001F507 Mic", font=("Segoe UI",9), fg=DIM, bg=INP,
-            bd=0, padx=10, pady=5, cursor="hand2", command=self._toggle_mic)
-        self.mic_btn.pack(side=tk.RIGHT)
-
-        # Input row
-        ir = tk.Frame(bot, bg=BG); ir.pack(fill=tk.X)
-        self.entry = tk.Entry(ir, font=("Segoe UI",12), bg=INP, fg=FG, insertbackground=FG, bd=0, relief=tk.FLAT)
-        self.entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=8, padx=(0,4))
-        self.entry.bind("<Return>", self._on_send)
-        tk.Button(ir, text="\u27A4", font=("Segoe UI",14), fg=ACCENT, bg=INP, bd=0, padx=8, cursor="hand2",
-            command=lambda: self._on_send(None)).pack(side=tk.RIGHT, ipady=5)
-
-        # Chat log
-        self.chat = scrolledtext.ScrolledText(self._body, wrap=tk.WORD, font=("Segoe UI",12),
-            bg=BG, fg=FG, bd=0, padx=14, pady=10, state=tk.DISABLED, spacing3=6, relief=tk.FLAT)
-        self.chat.pack(fill=tk.BOTH, expand=True)
-        self.chat.tag_config("user", foreground=ACCENT, font=("Segoe UI",12,"bold"))
-        self.chat.tag_config("bot", foreground=FG, font=("Segoe UI",12))
-        self.chat.tag_config("dim", foreground=DIM, font=("Segoe UI",10))
-        self.chat.tag_config("live", foreground=RED, font=("Segoe UI",11,"bold"))
-        self.chat.tag_config("cmd", foreground=GREEN, font=("Consolas",10))
-        self.chat.tag_config("typing", foreground=DIM, font=("Segoe UI",11))
-
-        self._msg("Welcome! Type a question or click Go Live Help.", "dim")
-        self.win.withdraw()
-
-    # ── Helpers ───────────────────────────────────────────────────────────
-
-    def _msg(self, text, tag="bot"):
-        self.chat.config(state=tk.NORMAL)
-        pfx = "\nYou: " if tag == "user" else "\n" if tag in ("bot","live") else ""
-        self.chat.insert(tk.END, f"{pfx}{text}\n", tag)
-        self.chat.config(state=tk.DISABLED); self.chat.see(tk.END)
-
-    def _msg_append(self, text, tag="bot"):
-        """Append text to last line (for streaming)."""
-        self.chat.config(state=tk.NORMAL)
-        self.chat.insert(tk.END, text, tag)
-        self.chat.config(state=tk.DISABLED); self.chat.see(tk.END)
-
-    def _show_typing(self):
-        self._msg("\u25CF\u25CF\u25CF", "typing")
-
-    def _clear_typing(self):
-        self.chat.config(state=tk.NORMAL)
-        content = self.chat.get("1.0", tk.END)
-        if "\u25CF\u25CF\u25CF" in content:
-            idx = self.chat.search("\u25CF\u25CF\u25CF", "1.0", tk.END)
-            if idx:
-                self.chat.delete(idx, f"{idx} lineend + 1c")
-        self.chat.config(state=tk.DISABLED)
-
-    def _show_chat(self):
-        self.win.deiconify(); self.win.lift(); self.entry.focus_set()
-
-    def _toggle_minimize(self):
-        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        if self._minimized:
-            self._body.pack(fill=tk.BOTH, expand=True)
-            self.win.geometry(f"430x{self._full_h}+{sw-442}+{sh-self._full_h-50}")
-            self._minimized = False
-        else:
-            self._body.pack_forget()
-            self.win.geometry(f"430x{self._mini_h}+{sw-442}+{sh-self._mini_h-50}")
-            self._minimized = True
-
-    def _toggle_mic(self):
-        if self._mic_on:
-            self._mic_on = False
-            if self._mic: self._mic.stop(); self._mic = None
-            self.mic_btn.config(text="\U0001F507 Mic", fg="#8890a8")
-        else:
-            self._mic_on = True
-            self._mic = MicCapture(on_audio_chunk=self._on_mic_audio)
-            self._mic.start()
-            self.mic_btn.config(text="\U0001F3A4 Mic", fg="#9ece6a")
-
-    # ── Confirmation UI ───────────────────────────────────────────────────
-
-    def _show_confirm(self, action_obj):
-        self._pending_action = action_obj
-        act = action_obj.get("action","")
-        target = action_obj.get("target", action_obj.get("cmd",""))
-        self._confirm_label.config(text=f"{act}: {target}")
-        self._confirm_frame.pack(fill=tk.X, pady=(0,4))
-
-    def _confirm_action(self):
-        if self._pending_action:
-            a = self._pending_action
-            self._pending_action = None
-            self._confirm_frame.pack_forget()
-            threading.Thread(target=self._exec_action, args=(a,), daemon=True).start()
-
-    def _cancel_action(self):
-        self._pending_action = None
-        self._confirm_frame.pack_forget()
-        self._msg("Cancelled.", "dim")
-
-    def _exec_action(self, action_obj):
-        ok, out = execute_action(action_obj)
-        act = action_obj.get("action","")
-        self.root.after(0, lambda: self._msg(f"{'✓' if ok else '✗'} {act}: {out[:200]}", "cmd" if ok else "dim"))
-
-    # ── History management (last 2 turns + summary) ───────────────────────
-
-    def _trimmed_history(self):
-        """Return compact history: system + summary + last 2 exchanges."""
-        msgs = [{"role": "system", "content": SYS_PROMPT}]
-        if self._session_summary:
-            msgs.append({"role": "system", "content": f"Context: {self._session_summary}"})
-        # Last 2 user+assistant pairs
-        pairs = [m for m in self._history if m["role"] in ("user","assistant")]
-        msgs.extend(pairs[-4:])
-        return msgs
-
-    # ── Chat + Routing ────────────────────────────────────────────────────
-
-    def _on_send(self, event):
-        text = self.entry.get().strip()
-        if not text: return
-        self.entry.delete(0, tk.END)
-        self._msg(text, "user")
+    def send_message(self, text):
+        """Called from JS when user sends a message."""
         self._history.append({"role": "user", "content": text})
-        if self._is_live:
-            threading.Thread(target=self._send_live_text, args=(text,), daemon=True).start()
-        else:
-            self.root.after(0, self._show_typing)
-            threading.Thread(target=self._do_chat, args=(text,), daemon=True).start()
+        
+        # Injection check
+        is_safe, reason = check_injection(text)
+        if not is_safe:
+            self._emit("msg", {"text": f"⚠️ {reason}", "role": "dim"})
+            return
 
-    def _do_chat(self, text):
-        """Route → classify → inject capability → stream response."""
-        # 1. Classify intent (cheap, cached)
+        # Direct command check
+        direct_cmd = check_direct_command(text)
+        if direct_cmd:
+            self._emit("msg", {"text": f"⚡ Running: {direct_cmd[:60]}", "role": "cmd"})
+            ok, out = run_cmd(direct_cmd) if direct_cmd.startswith("Start-Process") or is_allowed(direct_cmd) else (False, "Blocked")
+            self._emit("msg", {"text": f"{'✓' if ok else '✗'} {out[:200]}", "role": "cmd" if ok else "dim"})
+            self._memory.update_after_turn("direct", None, {"action": "direct_cmd", "cmd": direct_cmd})
+            return
+
+        threading.Thread(target=self._do_chat_thread, args=(text,), daemon=True).start()
+
+    def _do_chat_thread(self, text):
         norm = normalize_msg(text)
-        intent = classify_intent(norm)
-        _dlog(f"INTENT: '{norm}' → {intent}")
+        
+        async def fetch_context():
+            t_intent = asyncio.to_thread(classify_intent, norm)
+            t_mem = asyncio.to_thread(self._memory.to_prompt)
+            return await asyncio.gather(t_intent, t_mem)
 
-        # 2. Match capability module
+        intent, mem_ctx = asyncio.run(fetch_context())
+        
         cap = match_capability(text)
         cap_ctx = build_context_prompt(cap) if cap else ""
 
-        # 3. Build messages
-        msgs = self._trimmed_history()
+        msgs = [{"role": "system", "content": SYS_PROMPT}]
+        if self._session_summary:
+            msgs.append({"role": "system", "content": f"Context: {self._session_summary}"})
         if cap_ctx:
-            msgs.insert(1, {"role": "system", "content": cap_ctx})
+            msgs.append({"role": "system", "content": cap_ctx})
+        if mem_ctx:
+            msgs.append({"role": "system", "content": f"User context: {mem_ctx}"})
+            
+        pairs = [m for m in self._history if m["role"] in ("user","assistant")]
+        msgs.extend(pairs[-4:])
 
-        # 4. Determine max_tokens
         mt = MAX_TOKENS.get(intent, MAX_TOKENS["general"])
 
-        # 5. Stream response
-        self.root.after(0, self._clear_typing)
-        first_token = [True]
+        full_reply = []
         def on_token(chunk):
-            if first_token[0]:
-                self.root.after(0, lambda: self._msg("", "bot"))
-                first_token[0] = False
-            self.root.after(0, lambda c=chunk: self._msg_append(c, "bot"))
+            full_reply.append(chunk)
+            self._emit("update_msg", {"text": "".join(full_reply)})
 
         try:
             reply = call_ai_stream(msgs, CHAT_KEY, CHAT_MODEL, mt, on_token)
+            self._emit("end_msg", {})
             self._history.append({"role": "assistant", "content": reply})
         except Exception as e:
-            self.root.after(0, self._clear_typing)
-            self.root.after(0, lambda: self._msg(f"Error: {e}", "dim"))
+            self._emit("end_msg", {})
+            self._emit("msg", {"text": f"Error: {e}", "role": "dim"})
             return
 
-        # 6. Parse and handle structured actions
         actions = parse_actions(reply)
         for a in actions:
             act = a.get("action", "")
-            # Safe actions auto-run, others need confirmation
             if act in ("open_settings", "run_diagnostic", "list_processes", "check_disk", "check_network"):
-                self.root.after(0, lambda ao=a: self._exec_action(ao))
+                self._exec_action(a)
             else:
-                self.root.after(0, lambda ao=a: self._show_confirm(ao))
+                msg_id = str(time.time())
+                self._pending_confirmations[msg_id] = a
+                self._window.evaluate_js(f"requireConfirmation({json.dumps(a)}, '{msg_id}')")
 
-    # ── Live Session ──────────────────────────────────────────────────────
+        self._memory.update_after_turn(intent, cap["id"] if cap else None, actions[0] if actions else None)
 
-    def _toggle_live(self):
-        if self._is_live: self._stop_live()
-        else: self._start_live()
+    def _exec_action(self, action_obj):
+        act = action_obj.get("action","")
+        ok, out = execute_action(action_obj)
+        self._emit("msg", {"text": f"{'✓' if ok else '✗'} {act}: {out[:200]}", "role": "cmd" if ok else "dim"})
+
+    def resolve_confirmation(self, msg_id, is_allow):
+        """Called from JS when user allows/denies action."""
+        action_obj = self._pending_confirmations.pop(msg_id, None)
+        if action_obj and is_allow:
+            threading.Thread(target=self._exec_action, args=(action_obj,), daemon=True).start()
+
+    # --- Live Mode ---
+    def check_consent(self):
+        return _load_consent()
+
+    def give_consent(self):
+        _save_consent()
+        return True
+
+    def toggle_live(self, enable):
+        if enable and not self._is_live:
+            self._start_live()
+        elif not enable and self._is_live:
+            self._stop_live()
 
     def _start_live(self):
         if not GEMINI_KEY:
-            self._msg("Set GEMINI_API_KEY for live mode.", "dim"); return
+            self._emit("msg", {"text": "Set GEMINI_API_KEY for live mode.", "role": "dim"})
+            return
+            
+        _log_live_session("session_start")
         self._is_live = True
-        self._msg("\U0001F534 Live session starting", "live")
-        self.live_btn.config(text="\u25A0 End Live", bg="#991b1b")
-        self._speaker = SpeakerOutput(); self._speaker.start()
+        self._speaker = SpeakerOutput()
+        self._speaker.start()
         self._live_loop = asyncio.new_event_loop()
         threading.Thread(target=lambda: self._live_loop.run_until_complete(self._live_main()), daemon=True).start()
 
     async def _live_main(self):
+        def _handle_live_text(t):
+            self._emit("msg", {"text": t, "role": "live"})
+            actions = parse_actions(t)
+            for a in actions:
+                act = a.get("action", "")
+                if act in ("open_settings", "run_diagnostic", "list_processes", "check_disk", "check_network"):
+                    self._exec_action(a)
+                else:
+                    msg_id = str(time.time())
+                    self._pending_confirmations[msg_id] = a
+                    if self._window:
+                        self._window.evaluate_js(f"requireConfirmation({json.dumps(a)}, '{msg_id}')")
+
         self._live_session = GeminiLiveSession(api_key=GEMINI_KEY,
             on_audio_out=lambda b: self._speaker.play(b) if self._speaker else None,
-            on_text_out=lambda t: self.root.after(0, lambda: self._msg(t, "live")),
-            on_turn_complete=lambda: _dlog("LIVE: turn done"),
-            on_session_end=lambda: self.root.after(0, self._cleanup_live))
+            on_text_out=_handle_live_text)
+            
         try: await self._live_session.connect()
         except Exception as e:
-            self.root.after(0, lambda: self._msg(f"Connection failed: {e}", "dim"))
-            self.root.after(0, self._cleanup_live); return
+            self._emit("msg", {"text": f"Connection failed: {e}", "role": "dim"})
+            self._stop_live()
+            return
 
-        self.root.after(0, lambda: self.ticker.show(on_stop=self._stop_live))
-        self.root.after(0, lambda: self._msg("\U0001F534 LIVE — AI watching screen", "live"))
-        self._last_fp = _fingerprint(self.ticker.get_rect())
+        idle_det = IdleDetector(idle_threshold_sec=5.0)
+        self._last_fp = b""
+        
         while self._is_live and self._live_session.is_running:
             try:
-                fp = _fingerprint(self.ticker.get_rect())
-                diff = sum(1 for x,y in zip(fp,self._last_fp) if abs(x-y)>30) / len(fp) if len(fp)==len(self._last_fp) and len(fp)>0 else 0
+                fp = _fingerprint((0,0,640,360))
+                diff = compute_diff(fp, self._last_fp)
+                truly_idle = idle_det.update(diff)
+
+                if truly_idle:
+                    await asyncio.sleep(5.0 if idle_det.is_deeply_idle else 3.0)
+                    continue
+
                 if diff > DIFF_THRESHOLD and not self._live_session.is_speaking:
-                    await self._live_session.send_video_frame(capture_frame())
+                    frame_data = capture_frame_with_metadata((0,0,640,360))
+                    await self._live_session.send_video_frame_with_metadata(frame_data)
                     self._last_fp = fp
-                await asyncio.sleep(1.0)
+
+                delay = get_adaptive_delay(diff)
+                await asyncio.sleep(2.0 if delay < 0 else delay)
             except: await asyncio.sleep(1.0)
+            
         await self._live_session.disconnect()
 
-    def _on_mic_audio(self, b64):
-        if self._is_live and self._mic_on and self._live_session and self._live_loop:
-            asyncio.run_coroutine_threadsafe(self._live_session.send_audio(b64), self._live_loop)
-
-    def _send_live_text(self, text):
-        if self._live_session and self._live_loop:
-            asyncio.run_coroutine_threadsafe(self._live_session.send_text(text), self._live_loop)
-
     def _stop_live(self):
-        self._is_live = False; self._cleanup_live()
+        self._is_live = False
+        if self._speaker:
+            self._speaker.stop()
+            self._speaker = None
+        if self._live_session and self._live_loop:
+            asyncio.run_coroutine_threadsafe(self._live_session.disconnect(), self._live_loop)
 
-    def _cleanup_live(self):
-        self._is_live = False; self._mic_on = False
-        if self._mic: self._mic.stop(); self._mic = None
-        if self._speaker: self._speaker.stop(); self._speaker = None
-        self.ticker.hide()
-        self.live_btn.config(text="\U0001F534 Go Live Help", bg="#dc2626")
-        self.mic_btn.config(text="\U0001F507 Mic", fg="#8890a8")
-        self._msg("Live session ended.", "dim")
+    def _emit(self, event, data):
+        """Helper to invoke JS functions on the frontend."""
+        if not self._window: return
+        try:
+            if event == "msg":
+                text = json.dumps(data["text"])
+                role = json.dumps(data["role"])
+                self._window.evaluate_js(f"appendMessage({text}, {role})")
+            elif event == "update_msg":
+                text = json.dumps(data["text"])
+                self._window.evaluate_js(f"updateCurrentMessage({text})")
+            elif event == "end_msg":
+                self._window.evaluate_js("endCurrentMessage()")
+        except Exception as e:
+            print("Emit error:", e)
 
-    # ── Tray Icon ─────────────────────────────────────────────────────────
-
-    def _make_icon(self):
-        img = Image.new("RGBA", (64,64), (0,0,0,0))
-        d = PilDraw.Draw(img)
-        d.ellipse([4,4,60,60], fill="#7aa2f7")
-        d.polygon([(32,10),(22,34),(30,34),(28,54),(42,28),(34,28)], fill="#1a1b26")
-        return img
-
-    def _run_tray(self):
-        menu = pystray.Menu(
-            pystray.MenuItem("Open", lambda: self.root.after(0, self._show_chat), default=True),
-            pystray.MenuItem("Go Live", lambda: self.root.after(0, self._start_live)),
-            pystray.MenuItem("Quit", self._quit))
-        self.tray = pystray.Icon("HumphiAI", self._make_icon(), "Humphi AI", menu)
-        self.tray.run()
-
-    def _quit(self):
-        if self._is_live: self._stop_live()
-        self.tray.stop()
-        self.root.after(0, self.root.destroy)
-
-    def run(self):
-        _dlog(f"=== Humphi AI Started === Router:{ROUTER_MODEL} Chat:{CHAT_MODEL}")
-        _dlog(f"  Gemini: {'ready' if GEMINI_KEY else 'MISSING'}")
-        threading.Thread(target=self._run_tray, daemon=True).start()
-        self.root.after(500, self._show_chat)
-        self.root.mainloop()
-
+def generate_session_summary(history):
+    """Phase 5: Session End Summary."""
+    if len(history) < 3: return "Short session, no summary needed."
+    transcript = "\\n".join([f"{m['role']}: {m['content']}" for m in history[-10:] if m['role'] != 'system'])
+    try:
+        r = httpx.post("https://openrouter.ai/api/v1/chat/completions",
+            headers={"Authorization": f"Bearer {CHAT_KEY}"},
+            json={"model": ROUTER_MODEL, "messages": [
+                {"role": "system", "content": "Summarize this IT support session in 1 concise line like '✅ Fixed WiFi issue' or '❌ Could not resolve printer'."},
+                {"role": "user", "content": transcript}
+            ]}, timeout=5)
+        return r.json()["choices"][0]["message"]["content"].strip()
+    except: return "Summary generation failed."
 
 if __name__ == "__main__":
-    HumphiAI().run()
+    _dlog(f"=== Humphi AI Started (Webview) === Router:{ROUTER_MODEL} Chat:{CHAT_MODEL}")
+    
+    api = BackendApi()
+    html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets', 'index.html')
+    
+    window = webview.create_window(
+        'Humphi AI', 
+        url=html_path, 
+        js_api=api,
+        width=450, 
+        height=600
+    )
+    api.set_window(window)
+    
+    def on_closed():
+        print("Window closed. Generating summary...")
+        summary = generate_session_summary(api._history)
+        print(f"Session Summary: {summary}")
+        try:
+            sum_file = Path.home() / ".humphi" / "session_summaries.jsonl"
+            sum_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(sum_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"ts": time.time(), "summary": summary}) + "\\n")
+        except: pass
+
+    window.events.closed += on_closed
+    webview.start()

@@ -1,0 +1,25 @@
+{
+  "id": "privacy",
+  "version": "1.0.0",
+  "name": "Privacy & Permissions",
+  "keywords": ["privacy", "permission", "camera", "location", "microphone access", "app permissions", "tracking", "activity history", "diagnostics data"],
+  "direct_commands": {
+    "open privacy settings": "Start-Process ms-settings:privacy",
+    "open privacy": "Start-Process ms-settings:privacy",
+    "open camera permissions": "Start-Process ms-settings:privacy-webcam",
+    "open microphone permissions": "Start-Process ms-settings:privacy-microphone",
+    "open location settings": "Start-Process ms-settings:privacy-location",
+    "open app permissions": "Start-Process ms-settings:appsfeatures"
+  },
+  "launch": {
+    "privacy": "Start-Process ms-settings:privacy",
+    "camera": "Start-Process ms-settings:privacy-webcam",
+    "microphone": "Start-Process ms-settings:privacy-microphone",
+    "location": "Start-Process ms-settings:privacy-location",
+    "notifications": "Start-Process ms-settings:notifications"
+  },
+  "diagnostics": [
+    "Get-AppxPackage | Where-Object {$_.SignatureKind -eq 'Store'} | Select-Object -First 10 Name | Format-Table"
+  ],
+  "prompt": "You are helping with privacy and permissions. Can open privacy settings for camera, microphone, location, notifications. Guide user through: Settings → Privacy → select category (Camera, Microphone, Location) → toggle app access. For tracking: Settings → Privacy → General → toggle advertising ID, activity history."
+}

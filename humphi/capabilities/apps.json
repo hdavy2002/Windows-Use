@@ -1,7 +1,17 @@
 {
   "id": "apps",
+  "version": "1.0.0",
   "name": "Apps & Programs",
   "keywords": ["uninstall", "install", "program", "app", "software", "remove program", "add program", "startup", "default app"],
+  "direct_commands": {
+    "open apps": "Start-Process ms-settings:appsfeatures",
+    "open apps settings": "Start-Process ms-settings:appsfeatures",
+    "open installed apps": "Start-Process ms-settings:appsfeatures",
+    "open default apps": "Start-Process ms-settings:defaultapps",
+    "open startup apps": "Start-Process ms-settings:startupapps",
+    "open add remove programs": "Start-Process appwiz.cpl",
+    "open programs and features": "Start-Process appwiz.cpl"
+  },
   "launch": {
     "apps": "Start-Process ms-settings:appsfeatures",
     "default_apps": "Start-Process ms-settings:defaultapps",

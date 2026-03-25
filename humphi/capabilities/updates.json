@@ -1,7 +1,15 @@
 {
   "id": "updates",
+  "version": "1.0.0",
   "name": "Windows Update & Security",
   "keywords": ["update", "windows update", "security", "antivirus", "defender", "firewall", "patch", "restart", "reboot"],
+  "direct_commands": {
+    "open windows update": "Start-Process ms-settings:windowsupdate",
+    "check for updates": "Start-Process ms-settings:windowsupdate",
+    "open defender": "Start-Process ms-settings:windowsdefender",
+    "open windows security": "Start-Process ms-settings:windowsdefender",
+    "open recovery": "Start-Process ms-settings:recovery"
+  },
   "launch": {
     "update": "Start-Process ms-settings:windowsupdate",
     "defender": "Start-Process ms-settings:windowsdefender",
