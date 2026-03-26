@@ -1,32 +1,27 @@
-# Python
+# dependencies
+node_modules/
+.next/
+out/
+
+# env
+.env
+.env.local
+.env*.local
+
+# python reference (temporary)
+_python_reference/
+
+# misc
+.DS_Store
+*.pem
+*.log
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-.Python
-*.egg-info/
-dist/
-build/
-.venv/
-venv/
-env/
+.wrangler/
+.pytest_cache/
 
-# Humphi runtime
-.humphi/
+# vercel
+.vercel
 
-# Env & secrets
-.env
-*.env
-
-# IDE
-.vscode/
-.idea/
-*.sublime-*
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
-*.jsonl
+# turbo
+.turbo
