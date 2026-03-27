@@ -7,6 +7,8 @@ import { sessionRoutes } from "./domains/sessions/routes";
 import { telemetryRoutes } from "./domains/telemetry/routes";
 import { aiRoutes } from "./domains/ai/routes";
 import { adminRoutes } from "./domains/admin/routes";
+import { billingRoutes } from "./domains/billing/routes";
+import { connectorRoutes } from "./domains/connectors/routes";
 import { inngest, inngestServe } from "./lib/inngest";
 import type { Env, Variables } from "./types";
 
@@ -41,6 +43,8 @@ app.route("/sessions", sessionRoutes);
 app.route("/telemetry", telemetryRoutes);
 app.route("/ai", aiRoutes);
 app.route("/admin", adminRoutes);
+app.route("/billing", billingRoutes);
+app.route("/connectors", connectorRoutes);
 
 // Inngest — serves the function registry; Inngest cloud calls back here
 app.on(

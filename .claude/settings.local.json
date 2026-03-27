@@ -10,7 +10,13 @@
       "Bash(cmd /c \"rmdir /s /q \"\"c:\\\\Users\\\\hdavy2002\\\\Documents\\\\Website\\\\windows -use\\\\Windows-Use\\\\desktop\"\"\")",
       "Bash(cmd /c \"rmdir /s /q \"\"c:\\\\Users\\\\hdavy2002\\\\Documents\\\\Website\\\\windows -use\\\\Windows-Use\\\\desktop\\\\node_modules\"\"\")",
       "Bash(powershell -Command \"Start-Sleep 3; Test-Path ''c:\\\\Users\\\\hdavy2002\\\\Documents\\\\Website\\\\windows -use\\\\Windows-Use\\\\desktop''\")",
-      "Bash(powershell -Command \"Remove-Item -LiteralPath ''\\\\?\\\\c:\\\\Users\\\\hdavy2002\\\\Documents\\\\Website\\\\windows -use\\\\Windows-Use\\\\desktop'' -Recurse -Force -ErrorAction SilentlyContinue; Write-Host done\")"
+      "Bash(powershell -Command \"Remove-Item -LiteralPath ''\\\\?\\\\c:\\\\Users\\\\hdavy2002\\\\Documents\\\\Website\\\\windows -use\\\\Windows-Use\\\\desktop'' -Recurse -Force -ErrorAction SilentlyContinue; Write-Host done\")",
+      "Bash(find '/c/Users/hdavy2002/Documents/Website/windows -use/Windows-Use/apps/api/src' -type f -name *.ts -o -name *.tsx)",
+      "Bash(find '/c/Users/hdavy2002/Documents/Website/windows -use/Windows-Use/apps/web/app' -type f -name *.ts -o -name *.tsx)",
+      "Bash(find '/c/Users/hdavy2002/Documents/Website/windows -use/Windows-Use/apps/desktop/src' -type f -name *.ts -o -name *.tsx)",
+      "Bash(find '/c/Users/hdavy2002/Documents/Website/windows -use/Windows-Use/packages/db/src' -type f -name *.ts)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm typecheck:*)"
     ]
   }
 }

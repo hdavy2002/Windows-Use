@@ -23,6 +23,8 @@ export type Env = {
   COMPOSIO_API_KEY: string;
   // Brevo
   BREVO_API_KEY: string;
+  // Mem0
+  MEM0_API_KEY: string;
   // URLs
   WEB_URL: string;
   API_URL: string;
