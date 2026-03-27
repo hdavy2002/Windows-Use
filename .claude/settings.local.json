@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(echo \"target exists: $?\")",
+      "Bash(mkdir -p apps packages/db/src packages/types/src)",
+      "Bash(mv desktop:*)",
+      "Bash(mv web:*)",
+      "Bash(powershell -Command \"Move-Item -Path ''desktop'' -Destination ''apps/desktop'' -Force; Move-Item -Path ''web'' -Destination ''apps/web'' -Force; Write-Host ''done''\")",
+      "Bash(powershell -Command \":*)",
+      "Bash(cmd /c \"rmdir /s /q \"\"c:\\\\Users\\\\hdavy2002\\\\Documents\\\\Website\\\\windows -use\\\\Windows-Use\\\\desktop\"\"\")",
+      "Bash(cmd /c \"rmdir /s /q \"\"c:\\\\Users\\\\hdavy2002\\\\Documents\\\\Website\\\\windows -use\\\\Windows-Use\\\\desktop\\\\node_modules\"\"\")",
+      "Bash(powershell -Command \"Start-Sleep 3; Test-Path ''c:\\\\Users\\\\hdavy2002\\\\Documents\\\\Website\\\\windows -use\\\\Windows-Use\\\\desktop''\")",
+      "Bash(powershell -Command \"Remove-Item -LiteralPath ''\\\\?\\\\c:\\\\Users\\\\hdavy2002\\\\Documents\\\\Website\\\\windows -use\\\\Windows-Use\\\\desktop'' -Recurse -Force -ErrorAction SilentlyContinue; Write-Host done\")"
+    ]
+  }
+}

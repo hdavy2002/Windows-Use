@@ -25,3 +25,9 @@ __pycache__/
 
 # turbo
 .turbo
+
+# rust build cache
+target/
+
+# leftover stale node_modules from monorepo migration
+desktop/
